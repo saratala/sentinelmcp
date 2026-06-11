@@ -1,14 +1,18 @@
 [project]
 name = "sentinelmcp"
-version = "0.1.0"
-description = "Zero-trust security gateway for MCP connections"
+version = "0.2.0"
+description = "AI Agent Security Gateway for MCP connections"
 requires-python = ">=3.9"
 dependencies = [
     "fastapi",
+    "uvicorn[standard]",
     "redis>=5",
     "pydantic>=2",
     "pydantic-settings",
     "structlog",
+    "scikit-learn",
+    "celery[redis]",
+    "httpx",
 ]
 
 [project.optional-dependencies]
@@ -18,6 +22,7 @@ test = [
     "pytest-cov",
     "httpx",
     "fakeredis",
+    "anyio",
 ]
 
 [tool.pytest.ini_options]

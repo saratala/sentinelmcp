@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     revalidation_interval: int = 300       # seconds — background re-validation cadence
     schema_key_prefix: str = "schema:"     # Redis key namespace for cached schemas
 
+    # Celery (Layer 3 async dispatch)
+    celery_broker_url: str = "redis://localhost:6379/1"
+    celery_result_backend: str = "redis://localhost:6379/1"
+
 
 def get_settings() -> Settings:
     """Return a fresh Settings instance read from the environment."""
