@@ -4,9 +4,11 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.core.auth import require_api_key
+from app.core.rate_limit import limiter
 from app.deps import get_circuit_breaker, get_context_layer, get_schema_layer
 from app.gateway.param_layer import ParamLayer
 from app.gateway.schema_layer import SchemaLayer
@@ -37,9 +39,12 @@ class InvokeRequest(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/validate-schema")
+@limiter.limit("60/minute")
 async def validate_schema(
+    request: Request,
     req: SchemaValidateRequest,
     schema_layer: SchemaLayer = Depends(get_schema_layer),
+    _key: str = Depends(require_api_key),
 ) -> dict:
     """Layer 1 — validate and cache a server's tool schemas."""
     if not req.server_url:
@@ -50,11 +55,14 @@ async def validate_schema(
 
 
 @router.post("/invoke")
+@limiter.limit("300/minute")
 async def invoke_tool(
+    request: Request,
     req: InvokeRequest,
     schema_layer: SchemaLayer = Depends(get_schema_layer),
     context_layer: ContextLayer = Depends(get_context_layer),
     circuit_breaker: CircuitBreaker = Depends(get_circuit_breaker),
+    _key: str = Depends(require_api_key),
 ) -> dict:
     """Layers 2 + 3 + 4 — validate a tool invocation."""
     if not req.session_id or not req.tool_name:
@@ -77,8 +85,11 @@ async def invoke_tool(
 
 
 @router.get("/inventory")
+@limiter.limit("30/minute")
 async def get_inventory(
+    request: Request,
     schema_layer: SchemaLayer = Depends(get_schema_layer),
+    _key: str = Depends(require_api_key),
 ) -> dict:
     """Return all known MCP servers and their cached security status."""
     servers = await schema_layer.list_cached_servers()
@@ -98,9 +109,12 @@ async def get_inventory(
 
 
 @router.post("/circuit-breaker/reset")
+@limiter.limit("10/minute")
 async def reset_circuit(
+    request: Request,
     session_id: str,
     circuit_breaker: CircuitBreaker = Depends(get_circuit_breaker),
+    _key: str = Depends(require_api_key),
 ) -> dict:
     """Manually reset a session's circuit breaker after admin review."""
     await circuit_breaker.reset(session_id)

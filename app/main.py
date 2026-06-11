@@ -8,11 +8,14 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.core.circuit_breaker import CircuitBreaker
+from app.core.rate_limit import limiter
 from app.core.redis import close_redis, get_redis
 from app.gateway.context_layer import ContextLayer
 from app.gateway.router import router as gateway_router
@@ -34,6 +37,7 @@ async def lifespan(app: FastAPI):
     app.state.schema_layer = SchemaLayer(redis)
     app.state.context_layer = ContextLayer(redis)
     app.state.circuit_breaker = CircuitBreaker(redis)
+    app.state.redis = redis
 
     revalidator = BackgroundRevalidator(
         schema_layer=app.state.schema_layer,
@@ -66,6 +70,16 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+
+    # Rate limiter state + 429 handler
+    app.state.limiter = limiter
+
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": f"Rate limit exceeded: {exc.detail}"},
+        )
 
     app.include_router(gateway_router)
 
