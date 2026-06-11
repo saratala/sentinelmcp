@@ -42,7 +42,7 @@ export default function Inventory() {
   const servers = data?.servers || []
   const clean = servers.filter(s => s.status === 'clean').length
   const poisoned = servers.filter(s => s.status === 'poisoned').length
-  const totalTools = servers.reduce((n, s) => n + (s.tool_count || 0), 0)
+  const totalTools = servers.reduce((n, s) => n + (s.clean_tools || 0), 0)
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6">
@@ -91,19 +91,19 @@ export default function Inventory() {
               </thead>
               <tbody className="divide-y divide-gray-800/50">
                 {servers.map(s => (
-                  <tr key={s.server_url} className="hover:bg-gray-800/30 transition-colors">
-                    <td className="py-2.5 pr-4 text-gray-300 font-mono max-w-[240px] truncate" title={s.server_url}>
-                      {s.server_url}
+                  <tr key={s.server} className="hover:bg-gray-800/30 transition-colors">
+                    <td className="py-2.5 pr-4 text-gray-300 font-mono max-w-[240px] truncate" title={s.server}>
+                      {s.server}
                     </td>
                     <td className="py-2.5 pr-4">
-                      <span className={STATUS_STYLES[s.status] || 'text-gray-400'}>{s.status}</span>
+                      <span className={STATUS_STYLES[s.status?.toLowerCase()] || 'text-gray-400'}>{s.status}</span>
                     </td>
-                    <td className="py-2.5 pr-4 text-gray-400 text-center">{s.tool_count ?? '—'}</td>
+                    <td className="py-2.5 pr-4 text-gray-400 text-center">{s.clean_tools ?? '—'}</td>
                     <td className="py-2.5 pr-4 text-gray-500 whitespace-nowrap font-mono">
-                      {s.last_validated ? new Date(s.last_validated * 1000).toLocaleTimeString() : '—'}
+                      {s.last_validated ? new Date(s.last_validated).toLocaleTimeString() : '—'}
                     </td>
                     <td className="py-2.5 pr-4 text-gray-600 font-mono">
-                      {s.schema_hash ? s.schema_hash.slice(0, 8) + '…' : '—'}
+                      {s.hash ? s.hash.slice(0, 8) + '…' : '—'}
                     </td>
                   </tr>
                 ))}
