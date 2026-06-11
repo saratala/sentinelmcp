@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """SentinelMCP LangGraph Security Research Agent.
 
 A LangGraph agent with FAISS RAG over OWASP LLM Top 10 knowledge.

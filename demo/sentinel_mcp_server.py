@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """SentinelMCP as an MCP Server — expose security analysis as callable tools.
 
 Any agent (Claude, LangChain, AutoGPT, CrewAI) can add SentinelMCP to their
