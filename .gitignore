@@ -1,5 +1,8 @@
 .DS_Store
 
+# Session context carrier — regenerated per chat→code handoff, not source of truth
+HANDOFF.md
+
 # Python
 .venv/
 __pycache__/
