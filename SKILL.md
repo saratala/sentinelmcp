@@ -5,18 +5,29 @@
 
 ## What we're building
 
-SentinelMCP is a real-time AI runtime integrity gateway for MCP (Model Context
-Protocol) connections. It sits between AI agents and MCP servers, detecting tool
-poisoning, rug pulls, shadow servers, and credential theft — with under 5ms
-overhead on tool invocations.
+SentinelMCP is an **AI Agent Security Gateway** for MCP (Model Context Protocol)
+connections. It sits between AI agents and MCP servers, detecting tool poisoning,
+rug pulls, shadow servers, and credential theft — with under 5ms overhead on
+tool invocations.
 
-<!-- TAGLINE TODO: pick one before launch
-     Option A: "Every tool, verified."  (punchy, positive, website hero)
-     Option B: "AI runtime integrity gateway"  (technical descriptor, CISO pitch)
-     Option C: "Trusted AI agents, by design"  (outcome-first, board-level)
-     Option D: "The integrity layer for AI agents"  (infrastructure positioning)
-     Current placeholder in copy: "AI runtime integrity gateway"
-     Do NOT use "zero-trust" — evokes network/identity, not tool integrity -->
+**Tagline: "Every tool, verified."**
+
+<!-- MESSAGING DECISIONS (locked — change only after discussion with Sarat)
+     Descriptor : "AI Agent Security Gateway"
+       - "AI Agent" scopes the category precisely
+       - "Security" is instantly understood by CISOs, no decoding required
+       - "Gateway" signals infrastructure, not a bolt-on tool
+     Tagline    : "Every tool, verified."
+       - Positive promise (not "zero trust" / "nothing trusted")
+       - "Every" signals completeness — no gaps
+       - "verified" is credible in a regulated-industry sale
+
+     Rejected options (keep for reference):
+       - "zero-trust gateway"       — evokes network/identity, sounds negative
+       - "AI runtime integrity"     — technically precise but requires decoding
+       - "Trusted AI agents, by design" — outcome-first but vague
+       - "The integrity layer"      — infrastructure positioning, too abstract
+       - "Securified"               — portmanteau, too informal for CISO sale -->
 
 **Target customer:** Enterprise CISOs and AI Platform Engineering leads at
 fintech, healthcare, and regulated industries running AI agents with MCP in
