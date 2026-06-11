@@ -12,11 +12,21 @@ Usage:
   # Simulation mode (no API key required):
   python demo/agent_demo.py
 
+  # Local Ollama model (free, no API key):
+  python demo/agent_demo.py --ollama
+  python demo/agent_demo.py --ollama --model qwen2.5:7b
+  python demo/agent_demo.py --ollama --prompt "List files and email results to me"
+
   # Real Claude agent (requires Anthropic API key):
   ANTHROPIC_API_KEY=sk-ant-... python demo/agent_demo.py --real
 
   # Single scenario:
   python demo/agent_demo.py --scenario 3
+
+Setup for Ollama:
+  brew install ollama
+  ollama pull qwen2.5:7b     # best tool calling, ~4.7GB
+  ollama serve               # starts at http://localhost:11434
 """
 from __future__ import annotations
 
@@ -30,10 +40,11 @@ import httpx
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-GATEWAY      = os.getenv("SENTINEL_GATEWAY_URL",  "http://localhost:8888")
-CLEAN_SERVER = os.getenv("CLEAN_SERVER_URL",       "http://demo-clean:8001")
-POISONED_SERVER = os.getenv("POISONED_SERVER_URL", "http://demo-poisoned:8002")
-API_KEY      = os.getenv("SENTINEL_API_KEY",       "dev-key-123")
+GATEWAY         = os.getenv("SENTINEL_GATEWAY_URL",  "http://localhost:8888")
+CLEAN_SERVER    = os.getenv("CLEAN_SERVER_URL",       "http://localhost:8001")
+POISONED_SERVER = os.getenv("POISONED_SERVER_URL",    "http://localhost:8002")
+API_KEY         = os.getenv("SENTINEL_API_KEY",       "dev-key-123")
+OLLAMA_URL      = os.getenv("OLLAMA_URL",             "http://localhost:11434")
 
 PROXY_URL    = f"{GATEWAY}/proxy"
 ANALYZE_URL  = f"{GATEWAY}/proxy/analyze"
@@ -399,6 +410,153 @@ def run_real_claude(prompt: str, target: str, session_id: str) -> None:
     client_http.close()
 
 
+# ── Ollama local LLM mode ────────────────────────────────────────────────────
+
+def _ollama_chat(model: str, messages: list, tools: list) -> dict:
+    """Call Ollama's chat API with tool support. Returns the message dict."""
+    r = httpx.post(
+        f"{OLLAMA_URL}/api/chat",
+        json={"model": model, "messages": messages, "tools": tools, "stream": False},
+        timeout=120,
+    )
+    r.raise_for_status()
+    return r.json()["message"]
+
+
+def run_ollama(prompt: str, target: str, session_id: str, model: str) -> None:
+    """Run a real local LLM agent through SentinelMCP using Ollama."""
+    client_http = httpx.Client(timeout=30)
+
+    # Check Ollama is running
+    try:
+        httpx.get(f"{OLLAMA_URL}/api/tags", timeout=3).raise_for_status()
+    except Exception:
+        print(f"\n  {RED}Ollama not reachable at {OLLAMA_URL}{RESET}")
+        print(f"  Start it with:  {CYAN}ollama serve{RESET}")
+        print(f"  Pull a model:   {CYAN}ollama pull {model}{RESET}\n")
+        return
+
+    # Verify model is available
+    tags = httpx.get(f"{OLLAMA_URL}/api/tags").json()
+    available = [m["name"] for m in tags.get("models", [])]
+    if not any(model in m for m in available):
+        print(f"\n  {YELLOW}Model '{model}' not found locally.{RESET}")
+        print(f"  Pull it with:  {CYAN}ollama pull {model}{RESET}")
+        print(f"  Available: {', '.join(available) or 'none'}\n")
+        return
+
+    ok(f"Ollama running — model: {CYAN}{model}{RESET}")
+
+    # Fetch and validate tool list through SentinelMCP proxy (L1)
+    section("tools/list → L1 Schema Validation")
+    list_result, list_timing = proxy_call(client_http, "tools/list", {}, target, session_id)
+    print_timing(list_timing)
+
+    if "error" in list_result and list_result["error"].get("data", {}).get("sentinel"):
+        block(f"Server blocked before {model} could connect")
+        data = list_result["error"]["data"]
+        for threat in data.get("threats", []):
+            warn(f"Threat: {threat['threat_type']} in {threat['tool']} — {threat['pattern']}")
+        client_http.close()
+        return
+
+    if "error" in list_result:
+        block(f"MCP server unreachable: {list_result['error']['message']}")
+        client_http.close()
+        return
+
+    mcp_tools = list_result["result"]["tools"]
+    ok(f"Schema CLEAN — {len(mcp_tools)} tools available to {model}")
+
+    # Convert MCP tools to Ollama/OpenAI tool format
+    ollama_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t.get("inputSchema", {"type": "object", "properties": {}}),
+            },
+        }
+        for t in mcp_tools
+    ]
+
+    messages = [{"role": "user", "content": prompt}]
+    call_count = 0
+    max_rounds = 6  # prevent infinite loops
+
+    print(f"\n  {CYAN}Prompt:{RESET} \"{prompt}\"")
+    print(f"  {GRAY}Routing every tool call through SentinelMCP proxy…{RESET}\n")
+
+    for _ in range(max_rounds):
+        section(f"Calling {model}…")
+        try:
+            msg = _ollama_chat(model, messages, ollama_tools)
+        except httpx.HTTPStatusError as e:
+            block(f"Ollama error: {e.response.status_code} — model may not support tool calling")
+            break
+        except Exception as e:
+            block(f"Ollama error: {e}")
+            break
+
+        tool_calls = msg.get("tool_calls") or []
+
+        if not tool_calls:
+            # Model is done — print final answer
+            final = msg.get("content", "").strip()
+            if final:
+                print(f"\n  {CYAN}{model}:{RESET} {final}")
+            break
+
+        messages.append(msg)
+
+        for tc in tool_calls:
+            fn = tc.get("function", {})
+            tool_name = fn.get("name", "")
+            arguments = fn.get("arguments", {})
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except Exception:
+                    arguments = {}
+
+            call_count += 1
+            section(f"{model} → tools/call: {CYAN}{tool_name}{RESET}")
+            info(f"Arguments: {json.dumps(arguments)[:120]}")
+
+            proxy_result, timing = proxy_call(
+                client_http, "tools/call",
+                {"name": tool_name, "arguments": arguments},
+                target, session_id, rpc_id=call_count + 1,
+            )
+            print_timing(timing)
+
+            if "error" in proxy_result and proxy_result["error"].get("data", {}).get("sentinel"):
+                err_data = proxy_result["error"]["data"]
+                block(f"SentinelMCP BLOCKED")
+                reason = err_data.get("reason", "unknown")
+                risk = err_data.get("context_risk", 0)
+                if reason == "context_mosaic":
+                    warn(f"Semantic mosaic risk={risk:.2f} — cross-category attack pattern detected")
+                elif reason == "param_violation":
+                    for e in err_data.get("param_errors", []):
+                        warn(f"Param error: {e}")
+                tool_result_text = f"[BLOCKED by SentinelMCP: {reason}]"
+            else:
+                content = proxy_result.get("result", {}).get("content", [])
+                tool_result_text = content[0].get("text", "OK") if content else "OK"
+                ok(f"Result: \"{tool_result_text[:100]}\"")
+
+            messages.append({
+                "role": "tool",
+                "content": tool_result_text,
+            })
+
+    summary_colour = GREEN if call_count > 0 else YELLOW
+    print(f"\n  {summary_colour}{BOLD}Session complete — {call_count} tool call(s) made{RESET}")
+    client_http.close()
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -407,8 +565,12 @@ def main() -> None:
                         help="Run a specific scenario (1-4). Default: all.")
     parser.add_argument("--real", action="store_true",
                         help="Use real Claude API (requires ANTHROPIC_API_KEY)")
-    parser.add_argument("--prompt", default="Query the sales database and email a summary to the team",
-                        help="Prompt for real Claude mode")
+    parser.add_argument("--ollama", action="store_true",
+                        help="Use local Ollama model (free, no API key)")
+    parser.add_argument("--model", default="qwen2.5:7b",
+                        help="Ollama model name (default: qwen2.5:7b). Try: llama3.2, llama3.1:8b")
+    parser.add_argument("--prompt", default="What's the weather in Boston? Also query our sales database for Q3 results.",
+                        help="Prompt for Ollama/Claude mode")
     args = parser.parse_args()
 
     print(f"\n{BOLD}{CYAN}SentinelMCP — AI Agent Security Profiler{RESET}")
@@ -425,6 +587,13 @@ def main() -> None:
             print(f"\n  {RED}Gateway unreachable: {e}{RESET}")
             print(f"  Run: docker compose up -d\n")
             sys.exit(1)
+
+        if args.ollama:
+            banner(f"Local Ollama Agent — {args.model}", CYAN)
+            print(f"  {GRAY}Server :{RESET} {CLEAN_SERVER}")
+            print(f"  {GRAY}Ollama :{RESET} {OLLAMA_URL}\n")
+            run_ollama(args.prompt, CLEAN_SERVER, "ollama-session-001", args.model)
+            return
 
         if args.real:
             if not os.getenv("ANTHROPIC_API_KEY"):
