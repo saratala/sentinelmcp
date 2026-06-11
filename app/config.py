@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/1"
 
+    # LLM05: Server allowlist — set true to block unknown MCP servers
+    allowlist_enabled: bool = False   # SENTINEL_ALLOWLIST_ENABLED=true in production
+
     # SIEM sinks (all optional — leave blank to disable)
     splunk_hec_url: str = ""
     splunk_hec_token: str = ""
