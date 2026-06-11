@@ -1,7 +1,7 @@
 """Pydantic request/response models for all gateway layers."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -65,3 +65,31 @@ class OutputInspectionResult(BaseModel):
     threats: list[ThreatDetail] = Field(default_factory=list)
     circuit_tripped: bool = False
     latency_ms: float = 0.0
+
+
+# ── Layer 4 ───────────────────────────────────────────────────────────────────
+
+class ContextRiskResult(BaseModel):
+    """Outcome of evaluating one tool call's semantic mosaic risk through Layer 4."""
+
+    session_id: str
+    tool_name: str
+    window_size: int = 0
+    category_scores: dict[str, float] = Field(default_factory=dict)
+    risk_score: float = 0.0
+    alerted: bool = False
+    latency_ms: float = 0.0
+
+
+# ── Orchestrated invocation result ───────────────────────────────────────────
+
+class InvocationResult(BaseModel):
+    """Aggregated result from Layers 2, 3, and 4 for one tool invocation."""
+
+    session_id: str
+    tool_name: str
+    passed: bool
+    blocked_by_circuit: bool = False
+    circuit_reason: str = ""
+    param_result: Optional[ParamValidationResult] = None
+    context_result: Optional[ContextRiskResult] = None
