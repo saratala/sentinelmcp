@@ -43,7 +43,10 @@ async def mcp_proxy(
         raise HTTPException(status_code=400, detail="Not a JSON-RPC request")
 
     session_id = x_session_id or str(uuid.uuid4())
-    target_url = x_mcp_target.rstrip("/")
+    # Ensure URL always has a path — httpx sends an empty path without it, causing 404
+    from urllib.parse import urlparse as _up
+    _p = _up(x_mcp_target)
+    target_url = x_mcp_target if _p.path else x_mcp_target.rstrip("/") + "/"
 
     proxy = MCPProxy(
         schema_layer=schema_layer,
