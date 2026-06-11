@@ -29,3 +29,18 @@ CMD ["python", "demo/clean_server.py"]
 FROM base AS demo-poisoned
 EXPOSE 8002
 CMD ["python", "demo/poisoned_server.py"]
+
+# ── React dashboard ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS dashboard
+WORKDIR /app
+COPY dashboard/package*.json ./
+RUN npm ci
+COPY dashboard/ .
+ARG VITE_SENTINEL_API_KEY=dev-key-123
+ENV VITE_SENTINEL_API_KEY=${VITE_SENTINEL_API_KEY}
+RUN npm run build
+
+FROM nginx:alpine AS dashboard-serve
+COPY --from=dashboard /app/dist /usr/share/nginx/html
+COPY dashboard/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 5173

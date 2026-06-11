@@ -85,6 +85,20 @@ services:
         condition: service_healthy
     restart: on-failure
 
+  # ── React dashboard ─────────────────────────────────────────────────────────
+
+  dashboard:
+    build:
+      context: .
+      target: dashboard-serve
+      args:
+        VITE_SENTINEL_API_KEY: ${SENTINEL_API_KEY:-dev-key-123}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    restart: on-failure
+
   # ── Demo servers (for CISO demo only) ──────────────────────────────────────
 
   demo-clean:
