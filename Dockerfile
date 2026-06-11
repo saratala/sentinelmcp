@@ -34,7 +34,7 @@ CMD ["python", "demo/poisoned_server.py"]
 FROM node:20-alpine AS dashboard
 WORKDIR /app
 COPY dashboard/package*.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 COPY dashboard/ .
 ARG VITE_SENTINEL_API_KEY=dev-key-123
 ENV VITE_SENTINEL_API_KEY=${VITE_SENTINEL_API_KEY}
