@@ -60,6 +60,17 @@ curl http://localhost:8888/health
 python demo/demo.py
 ```
 
+### Step 3 — Open the threat dashboard
+
+```
+http://localhost:3000
+login: admin / sentinel
+```
+
+The dashboard auto-refreshes every 10 seconds. Run the demo script a few times
+to populate it with threat events — you'll see the live threat feed, attack
+timeline, threat-by-type breakdown, and top attacked servers.
+
 **Expected output:**
 
 ```
