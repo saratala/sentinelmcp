@@ -47,6 +47,9 @@ services:
       - "8888:8888"
     environment:
       <<: *app-env
+      SENTINEL_GATEWAY_URL: http://localhost:8888
+      CLEAN_SERVER_URL: http://demo-clean:8001
+      POISONED_SERVER_URL: http://demo-poisoned:8002
     depends_on:
       redis:
         condition: service_healthy
