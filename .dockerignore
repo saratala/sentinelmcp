@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+htmlcov
+.DS_Store
+*.egg-info
+.env
+HANDOFF.md
+docs/
+dashboard/node_modules

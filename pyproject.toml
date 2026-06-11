@@ -13,6 +13,9 @@ dependencies = [
     "scikit-learn",
     "celery[redis]",
     "httpx",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "slowapi",
 ]
 
 [project.optional-dependencies]

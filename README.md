@@ -20,57 +20,44 @@ in under 5ms — before your AI agent acts on them.
 
 ---
 
-## Run the CISO demo (no Docker needed)
+## Run the CISO demo
 
 This is the demo you run for every design partner conversation.
-Four terminals, five commands.
+Everything runs in Docker — no local Redis, no local Postgres, no setup beyond Docker Desktop.
 
 ### Prerequisites
 
-```bash
-# 1. Install Redis
-brew install redis          # macOS
-# sudo apt install redis-server  (Linux)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
+- Python 3.9+ (only for the demo script itself)
 
-# 2. Install Python dependencies
-cd /path/to/sentinelmcp
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[test]"
+```bash
+# Clone and install the demo script's only dependency
+git clone https://github.com/saratala/sentinelmcp
+cd sentinelmcp
+pip install httpx
 ```
 
-### Terminal 1 — Start Redis
+### Step 1 — Start everything
 
 ```bash
-redis-server
+# Start the full stack: redis + postgres + api + celery worker
+docker-compose up -d
+
+# Start the demo MCP servers (clean + poisoned)
+docker-compose --profile demo up -d
 ```
 
-### Terminal 2 — Start the gateway
+Wait ~10 seconds for services to be healthy, then verify:
 
 ```bash
-source .venv/bin/activate
-PYTHONPATH=. uvicorn app.main:app --port 8888 --reload
+curl http://localhost:8888/health
+# {"status":"ok","version":"0.2.0"}
 ```
 
-Wait for: `INFO: Application startup complete.`
-
-### Terminal 3 — Start demo MCP servers
+### Step 2 — Run the demo
 
 ```bash
-source .venv/bin/activate
-
-# Clean server (legitimate tools) — port 8001
-PYTHONPATH=. python demo/clean_server.py &
-
-# Poisoned server (attack simulation) — port 8002
-PYTHONPATH=. python demo/poisoned_server.py &
-```
-
-### Terminal 4 — Run the demo
-
-```bash
-source .venv/bin/activate
-PYTHONPATH=. python demo/demo.py
+python demo/demo.py
 ```
 
 **Expected output:**
@@ -110,15 +97,11 @@ curl http://localhost:8888/gateway/inventory
 
 ---
 
-## Run with Docker (full stack)
+## Tear down
 
 ```bash
-docker-compose up -d
-# starts: api (8888) + redis + postgres + celery worker
-
-PYTHONPATH=. python demo/demo.py
-
-docker-compose down
+docker-compose --profile demo down
+docker-compose down -v   # -v removes the postgres data volume too
 ```
 
 ---
@@ -126,10 +109,15 @@ docker-compose down
 ## Run tests
 
 ```bash
-PYTHONPATH=. .venv/bin/pytest tests/ -v --cov=app --cov-report=term-missing
+# One-time setup
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[test]"
+
+# Run (no Redis or Postgres needed — tests use fakeredis)
+PYTHONPATH=. pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
-61 tests across all 4 detection layers.
+71 tests across all layers, fakeredis — no external services needed.
 
 ---
 
