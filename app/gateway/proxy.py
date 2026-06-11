@@ -71,8 +71,12 @@ class MCPProxy:
         body: dict,
         target_url: str,
         session_id: str,
-    ) -> dict:
-        """Handle one JSON-RPC request. Returns a JSON-RPC response dict."""
+    ) -> tuple[dict, dict]:
+        """Handle one JSON-RPC request.
+
+        Returns (json_rpc_response, timing) where timing contains per-layer
+        latency in milliseconds — exposed via X-Sentinel-Latency header.
+        """
         method = body.get("method", "")
         rpc_id = body.get("id")
         t0 = time.perf_counter()
@@ -80,37 +84,42 @@ class MCPProxy:
         log.debug("proxy_request", method=method, target=target_url, session=session_id)
 
         if method == "tools/list":
-            return await self._handle_tools_list(body, target_url, session_id, rpc_id)
+            result, timing = await self._handle_tools_list(body, target_url, session_id, rpc_id)
+        elif method == "tools/call":
+            result, timing = await self._handle_tools_call(body, target_url, session_id, rpc_id, t0)
+        else:
+            # Transparent forward: initialize, ping, resources/list, etc.
+            result = await self._forward(target_url, body)
+            timing = {"method": method, "verdict": "forwarded"}
 
-        if method == "tools/call":
-            return await self._handle_tools_call(body, target_url, session_id, rpc_id, t0)
-
-        # Transparent forward for: initialize, ping, resources/list,
-        # prompts/list, completion/complete, logging/setLevel, etc.
-        return await self._forward(target_url, body)
+        timing["total_ms"] = round((time.perf_counter() - t0) * 1000, 2)
+        return result, timing
 
     # ── tools/list ────────────────────────────────────────────────────────────
 
     async def _handle_tools_list(
         self, body: dict, target_url: str, session_id: str, rpc_id: Any
-    ) -> dict:
+    ) -> tuple[dict, dict]:
         """Forward tools/list, run L1 schema validation, block if poisoned."""
-        # Forward to real server first to get current tool list.
+        t_l1 = time.perf_counter()
         upstream = await self._forward(target_url, body)
         if "error" in upstream:
-            return upstream
+            return upstream, {"method": "tools/list", "verdict": "upstream_error"}
 
         tools = upstream.get("result", {}).get("tools", [])
         if not tools:
-            return upstream
+            return upstream, {"method": "tools/list", "verdict": "forwarded", "l1_ms": 0}
 
-        # L1 — schema validation + rug pull detection
         schema_result = await self._schema.validate(target_url, tools)
+        l1_ms = round((time.perf_counter() - t_l1) * 1000, 2)
+        timing = {"method": "tools/list", "l1_ms": l1_ms, "cache_hit": schema_result.cache_hit}
 
         if not schema_result.passed:
             await self._log_schema_threats(target_url, session_id, schema_result)
             log.warning("proxy_tools_list_blocked",
                         target=target_url, threats=len(schema_result.threats))
+            timing["verdict"] = "BLOCK"
+            timing["threats"] = len(schema_result.threats)
             return _jsonrpc_error(
                 rpc_id, -32001,
                 "SentinelMCP: server blocked — tool poisoning detected",
@@ -119,70 +128,84 @@ class MCPProxy:
                     "rug_pull": schema_result.rug_pull,
                     "sentinel": True,
                 },
-            )
+            ), timing
 
-        # Cache inputSchemas for L2 validation on subsequent tools/call
         for tool in tools:
             key = (target_url, tool.get("name", ""))
             self._tool_schemas[key] = tool.get("inputSchema", {})
 
-        return upstream
+        timing["verdict"] = "PASS"
+        timing["tools_count"] = len(tools)
+        return upstream, timing
 
     # ── tools/call ────────────────────────────────────────────────────────────
 
     async def _handle_tools_call(
         self, body: dict, target_url: str, session_id: str, rpc_id: Any, t0: float
-    ) -> dict:
+    ) -> tuple[dict, dict]:
         """L2+L4 validate params, forward if clean, L3 inspect response async."""
         params = body.get("params", {})
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
 
-        # Retrieve cached inputSchema (from prior tools/list call)
         input_schema = self._tool_schemas.get(
             (target_url, tool_name),
             {"type": "object", "properties": {}},
         )
 
-        # L2 + L4 concurrent validation
+        t_validation = time.perf_counter()
         invocation = await self._validator.validate_invocation(
             session_id=session_id,
             tool_name=tool_name,
             params=arguments,
             input_schema=input_schema,
         )
+        validation_ms = round((time.perf_counter() - t_validation) * 1000, 2)
 
-        latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+        l2_ms = invocation.param_result.latency_ms if invocation.param_result else 0
+        l4_ms = invocation.context_result.latency_ms if invocation.context_result else 0
+        risk = invocation.context_result.risk_score if invocation.context_result else 0.0
+        categories = invocation.context_result.category_scores if invocation.context_result else {}
+
+        timing: dict = {
+            "method": "tools/call",
+            "tool": tool_name,
+            "l2_ms": l2_ms,
+            "l4_ms": l4_ms,
+            "context_risk": round(risk, 3),
+            "categories": categories,
+        }
 
         if not invocation.passed:
-            reason = "circuit breaker open" if invocation.blocked_by_circuit else "validation failed"
+            reason = "circuit_breaker" if invocation.blocked_by_circuit else (
+                "param_violation" if invocation.param_result and not invocation.param_result.passed
+                else "context_mosaic"
+            )
             log.warning("proxy_tools_call_blocked",
                         tool=tool_name, session=session_id, reason=reason)
+            timing["verdict"] = "BLOCK"
+            timing["reason"] = reason
+            timing["param_errors"] = invocation.param_result.errors if invocation.param_result else []
             return _jsonrpc_error(
                 rpc_id, -32002,
                 f"SentinelMCP: tool call blocked — {reason}",
-                data={
-                    "tool": tool_name,
-                    "sentinel": True,
-                    "latency_ms": latency_ms,
-                    "param_errors": invocation.param_result.errors if invocation.param_result else [],
-                    "context_risk": invocation.context_result.risk_score if invocation.context_result else 0,
-                },
-            )
+                data={"tool": tool_name, "sentinel": True,
+                      "reason": reason, "context_risk": risk,
+                      "param_errors": timing["param_errors"]},
+            ), timing
 
-        # Forward clean call to real MCP server
         upstream = await self._forward(target_url, body)
 
-        # L3 — fire-and-forget output inspection (never blocks response)
         output_text = self._extract_output_text(upstream)
         if output_text:
             asyncio.create_task(
                 inspect_output(session_id, tool_name, output_text, self._cb)
             )
 
+        timing["verdict"] = "PASS"
         log.info("proxy_tools_call_forwarded",
-                 tool=tool_name, session=session_id, latency_ms=latency_ms)
-        return upstream
+                 tool=tool_name, session=session_id, l2_ms=l2_ms, l4_ms=l4_ms)
+        return upstream, timing
 
     # ── helpers ───────────────────────────────────────────────────────────────
 

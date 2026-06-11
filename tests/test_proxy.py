@@ -100,7 +100,7 @@ async def test_tools_list_clean_passes():
     respx.post("http://mcp-server/").mock(return_value=httpx.Response(200, json=TOOLS_LIST_CLEAN))
 
     proxy = make_proxy(schema_result_passed=True)
-    result = await proxy.handle(
+    result, timing = await proxy.handle(
         {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
         "http://mcp-server",
         "sess-1",
@@ -129,7 +129,7 @@ async def test_tools_list_poisoned_blocked():
 
     with patch("app.gateway.proxy.MCPProxy._log_schema_threats", new_callable=AsyncMock):
         proxy = make_proxy(schema_result_passed=False, schema_threats=[threat])
-        result = await proxy.handle(
+        result, timing = await proxy.handle(
             {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
             "http://mcp-server",
             "sess-2",
@@ -150,7 +150,7 @@ async def test_tools_call_clean_forwarded():
     respx.post("http://mcp-server/").mock(return_value=httpx.Response(200, json=TOOLS_CALL_RESPONSE))
 
     proxy = make_proxy(invocation_passed=True)
-    result = await proxy.handle(TOOLS_CALL_REQUEST, "http://mcp-server", "sess-3")
+    result, timing = await proxy.handle(TOOLS_CALL_REQUEST, "http://mcp-server", "sess-3")
 
     assert "error" not in result
     assert result["result"]["content"][0]["text"] == "72°F, partly cloudy"
@@ -160,7 +160,7 @@ async def test_tools_call_clean_forwarded():
 async def test_tools_call_blocked_by_validation():
     """L2/L4 fail: request blocked, upstream never called."""
     proxy = make_proxy(invocation_passed=False)
-    result = await proxy.handle(TOOLS_CALL_REQUEST, "http://mcp-server", "sess-4")
+    result, timing = await proxy.handle(TOOLS_CALL_REQUEST, "http://mcp-server", "sess-4")
 
     assert "error" in result
     assert result["error"]["code"] == -32002
@@ -180,7 +180,7 @@ async def test_initialize_forwarded_transparently():
     respx.post("http://mcp-server/").mock(return_value=httpx.Response(200, json=init_response))
 
     proxy = make_proxy()
-    result = await proxy.handle(
+    result, timing = await proxy.handle(
         {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}},
         "http://mcp-server",
         "sess-5",
@@ -197,7 +197,7 @@ async def test_upstream_timeout_returns_jsonrpc_error():
     respx.post("http://mcp-server/").mock(side_effect=httpx.TimeoutException("timeout"))
 
     proxy = make_proxy()
-    result = await proxy.handle(
+    result, timing = await proxy.handle(
         {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
         "http://mcp-server",
         "sess-6",
