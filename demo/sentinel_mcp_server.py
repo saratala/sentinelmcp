@@ -46,7 +46,8 @@ import time
 from typing import Any
 
 import httpx
-from aiohttp import web
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -319,15 +320,20 @@ TOOL_DISPATCH = {
 }
 
 
-async def handle_rpc(request: web.Request) -> web.Response:
+app = FastAPI(title="SentinelMCP MCP Server")
+
+
+@app.post("/")
+@app.get("/")
+async def handle_rpc(request: Request) -> JSONResponse:
     try:
         body = await request.json()
     except Exception:
         return _err(None, -32700, "Parse error")
 
-    rpc_id  = body.get("id")
-    method  = body.get("method", "")
-    params  = body.get("params", {})
+    rpc_id = body.get("id")
+    method = body.get("method", "")
+    params = body.get("params", {})
 
     log.info("rpc  method=%s  id=%s", method, rpc_id)
 
@@ -356,8 +362,7 @@ async def handle_rpc(request: web.Request) -> web.Response:
         except Exception as exc:
             log.exception("tool error  tool=%s", tool_name)
             return _ok(rpc_id, {
-                "content": [{"type": "text",
-                             "text": f"Tool error: {exc}"}],
+                "content": [{"type": "text", "text": f"Tool error: {exc}"}],
                 "isError": True,
             })
 
@@ -367,28 +372,19 @@ async def handle_rpc(request: web.Request) -> web.Response:
     return _err(rpc_id, -32601, f"Method not found: {method}")
 
 
-def _ok(rpc_id: Any, result: Any) -> web.Response:
-    return web.Response(
-        text=json.dumps({"jsonrpc": "2.0", "id": rpc_id, "result": result}),
-        content_type="application/json",
-    )
+def _ok(rpc_id: Any, result: Any) -> JSONResponse:
+    return JSONResponse({"jsonrpc": "2.0", "id": rpc_id, "result": result})
 
 
-def _err(rpc_id: Any, code: int, message: str) -> web.Response:
-    return web.Response(
-        text=json.dumps({"jsonrpc": "2.0", "id": rpc_id,
-                         "error": {"code": code, "message": message}}),
-        content_type="application/json",
-        status=200,  # JSON-RPC errors are HTTP 200
-    )
+def _err(rpc_id: Any, code: int, message: str) -> JSONResponse:
+    return JSONResponse({"jsonrpc": "2.0", "id": rpc_id,
+                         "error": {"code": code, "message": message}})
 
 
 # ── Server startup ────────────────────────────────────────────────────────────
 
 def main() -> None:
-    app = web.Application()
-    app.router.add_post("/", handle_rpc)
-    app.router.add_get("/", handle_rpc)   # health / initialize via GET
+    import uvicorn
 
     log.info("SentinelMCP MCP Server starting on port %d", SERVER_PORT)
     log.info("Gateway: %s", GATEWAY)
@@ -404,10 +400,9 @@ def main() -> None:
     log.info("")
     log.info("Tools available:")
     for t in TOOLS:
-        log.info("  %-22s  %s", t["name"],
-                 t["description"][:60] + "...")
+        log.info("  %-22s  %s", t["name"], t["description"][:60] + "...")
 
-    web.run_app(app, host="0.0.0.0", port=SERVER_PORT, print=None)
+    uvicorn.run(app, host="0.0.0.0", port=SERVER_PORT, log_level="warning")
 
 
 if __name__ == "__main__":
