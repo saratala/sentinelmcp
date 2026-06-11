@@ -5,16 +5,140 @@
 
 ## What we're building
 
-SentinelMCP is a zero-trust security gateway for MCP (Model Context Protocol) connections.
-It sits between AI agents and MCP servers, detecting tool poisoning, rug pulls, shadow servers,
-and credential theft in real time — with under 5ms overhead on tool invocations.
+SentinelMCP is a real-time AI runtime integrity gateway for MCP (Model Context
+Protocol) connections. It sits between AI agents and MCP servers, detecting tool
+poisoning, rug pulls, shadow servers, and credential theft — with under 5ms
+overhead on tool invocations.
 
-**Target customer:** Enterprise CISOs and AI Platform Engineering leads at fintech, healthcare,
-and regulated industries running AI agents with MCP in production.
+<!-- TAGLINE TODO: pick one before launch
+     Option A: "Every tool, verified."  (punchy, positive, website hero)
+     Option B: "AI runtime integrity gateway"  (technical descriptor, CISO pitch)
+     Option C: "Trusted AI agents, by design"  (outcome-first, board-level)
+     Option D: "The integrity layer for AI agents"  (infrastructure positioning)
+     Current placeholder in copy: "AI runtime integrity gateway"
+     Do NOT use "zero-trust" — evokes network/identity, not tool integrity -->
 
-**Business model:** $2,500–$8,000/month SaaS. In-VPC deployment. LLM-agnostic.
+**Target customer:** Enterprise CISOs and AI Platform Engineering leads at
+fintech, healthcare, and regulated industries running AI agents with MCP in
+production.
 
-**Exit strategy:** Acquisition by Palo Alto Networks, CrowdStrike, or SentinelOne at $30–80M in 3 years.
+**Business model:** $2,500/mo Starter · $8,000/mo Growth · Enterprise custom.
+Target: 10 enterprise customers = $600K–$1.2M ARR Year 1.
+
+**Exit strategy:** Acquisition by Palo Alto Networks, CrowdStrike, or SentinelOne
+at $30–80M in 3 years.
+
+---
+
+## Why SentinelMCP exists
+
+MCP is the enterprise standard for connecting AI agents to tools — 78% of
+enterprise AI teams run it in production. It has critical, actively-exploited
+security gaps:
+
+- **CVE-2025-54136** (CVSS 9.4) — tool description injection
+- **CVE-2025-49596** — schema rug-pull mid-session
+
+No purpose-built security gateway exists. This is the window.
+
+### The six attack vectors we defend against
+
+| # | Attack | Description |
+|---|---|---|
+| 1 | **Tool poisoning** | Hidden instructions embedded in tool descriptions |
+| 2 | **Rug pulls** | Schema swapped silently mid-session |
+| 3 | **Shadow MCP servers** | Unauthorized servers bypassing monitoring |
+| 4 | **Credential theft** | MCP aggregates API keys — one breach = everything |
+| 5 | **Supply chain** | Malicious packages on public MCP registries |
+| 6 | **Semantic mosaic** | Benign-looking calls that assemble sensitive data at scale |
+
+### Core architectural insight — never violate this
+
+**One-time schema validation is broken. Per-request validation is too slow.**
+We use a 4-layer hybrid that gives full coverage at <5ms overhead:
+
+| Layer | When | Latency | What it catches |
+|---|---|---|---|
+| 1: Schema | Discovery + hash-watch | ~0ms cached | Poisoning, rug pulls |
+| 2: Parameter | Every call, BLOCKING | <1ms | Smuggling, escalation |
+| 3: Output | Every call, ASYNC | 0ms blocking | Output injection |
+| 4: Context | Every call, PARALLEL | <3ms | Semantic mosaic |
+
+**The async output trick:** Fork the response — agent gets it immediately,
+inspector gets a copy via Celery. Circuit breaker blocks the NEXT call if a
+threat is found. This is how we achieve <5ms while inspecting every output.
+
+---
+
+## Competitive moat
+
+We beat MintMCP, Bifrost, Kong, and Azure APIM on four capabilities nobody
+else has:
+
+- Tool poisoning detection
+- Rug pull alerts
+- Shadow MCP server discovery
+- Intent-aware policy engine
+
+Plus in-VPC deployment — non-negotiable for regulated industries.
+
+**Why Anthropic won't build this:** They build models, not security
+infrastructure. A tool they ship would only protect Claude — they need a neutral
+layer and have a conflict of interest.
+
+**Why CrowdStrike/Palo Alto won't move fast enough:** They will, in 18–24
+months. Our window is getting to 10 enterprise customers first. Data moat +
+reference customers + SOC 2 = defensible position.
+
+---
+
+## The demo that closes design partners
+
+Build this early — Sarat runs it for every CISO conversation. Must run in one
+command: `docker-compose up && python demo.py`
+
+1. Start `clean_server.py` and `poisoned_server.py`
+2. Start SentinelMCP gateway
+3. Connect agent to clean server → tools pass validation
+4. Connect agent to poisoned server → attack intercepted in real time
+5. Show threat log: CVE pattern match, confidence score, alert fired
+6. Show latency: <5ms overhead in both cases
+
+---
+
+## Founder context
+
+**Sarat** — 19 years in payment infrastructure and PCI compliance (WEX Inc,
+Senior Engineering Manager). Ships fast, knows Python and React, catches anything
+that violates security or latency constraints. Write to that standard.
+
+**Working relationship:**
+- Build complete feature (implementation + tests) → Sarat reviews in VS Code
+- Autonomous: new files, tests, fixing your own failures, configs, Dockerfiles
+- Requires Sarat's approval: changes to existing working code, auth/security
+  config, anything customer-facing, architectural decisions not in this doc
+- When blocked: say "BLOCKED: [specific question]" — never guess on security
+
+---
+
+## 90-day milestones
+
+| Week | Goal |
+|---|---|
+| 1–2 | Working POC + website live |
+| 3–6 | 3 design partners running SentinelMCP in staging |
+| 7–10 | $500K SAFE signed from security angels |
+| 11–13 | $300K ARR, 5 paying customers |
+
+**Angel targets:** Cyber Mentor Fund, SYN Ventures, Operator Collective, YC
+alumni with security background, former CISOs turned angels.
+
+**Design partner targets:** CISOs at fintechs and healthcare companies running
+Claude Code, Cursor, or any MCP-connected AI agents in production.
+
+**Pitch hook:** Lead with CVE-2025-54136 (CVSS 9.4). Real exploit, real
+enterprises affected, no dedicated solution. Sarat has 19 years in regulated
+payment infrastructure — he's the founder this problem needs.
 
 ---
 
@@ -124,7 +248,7 @@ sentinelmcp/
 ├── docker-compose.yml       # Local dev: API + Redis + Postgres + Worker
 ├── Dockerfile
 ├── pyproject.toml
-└── SKILL.md                 # This file
+└── SKILL.md                 # This file — single source of truth
 ```
 
 ---
@@ -207,6 +331,8 @@ curl -X POST http://localhost:8888/gateway/validate \
 - [ ] Helm chart for enterprise deployment
 - [ ] Dashboard (React)
 - [ ] SOC 2 evidence collection
+- [ ] One-command demo (`docker-compose up && python demo.py`)
+- [ ] Railway deployment (live demo URL)
 
 ---
 
