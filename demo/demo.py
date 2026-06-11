@@ -23,9 +23,11 @@ import time
 
 import httpx
 
-GATEWAY = "http://localhost:8888"
-CLEAN_SERVER = "http://localhost:8001"
-POISONED_SERVER = "http://localhost:8002"
+import os
+
+GATEWAY = os.getenv("SENTINEL_GATEWAY_URL", "http://localhost:8888")
+CLEAN_SERVER = os.getenv("CLEAN_SERVER_URL", "http://localhost:8001")
+POISONED_SERVER = os.getenv("POISONED_SERVER_URL", "http://localhost:8002")
 
 # ANSI colours
 RED = "\033[91m"
@@ -66,7 +68,7 @@ def check_services(client: httpx.Client) -> None:
 
 def fetch_tools(client: httpx.Client, server_url: str, port: int) -> list:
     """Fetch the tool manifest from a demo MCP server."""
-    r = client.get(f"http://localhost:{port}/tools")
+    r = client.get(f"{server_url}/tools")
     r.raise_for_status()
     return r.json()["tools"]
 
