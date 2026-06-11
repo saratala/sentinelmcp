@@ -41,8 +41,10 @@ import httpx
 # ── Config ────────────────────────────────────────────────────────────────────
 
 GATEWAY         = os.getenv("SENTINEL_GATEWAY_URL",  "http://localhost:8888")
-CLEAN_SERVER    = os.getenv("CLEAN_SERVER_URL",       "http://localhost:8001")
-POISONED_SERVER = os.getenv("POISONED_SERVER_URL",    "http://localhost:8002")
+# X-MCP-Target is resolved by the gateway container, so use Docker network names.
+# The gateway (api container) can reach demo-clean:8001 via the Docker bridge network.
+CLEAN_SERVER    = os.getenv("CLEAN_SERVER_URL",       "http://demo-clean:8001")
+POISONED_SERVER = os.getenv("POISONED_SERVER_URL",    "http://demo-poisoned:8002")
 API_KEY         = os.getenv("SENTINEL_API_KEY",       "dev-key-123")
 OLLAMA_URL      = os.getenv("OLLAMA_URL",             "http://localhost:11434")
 
