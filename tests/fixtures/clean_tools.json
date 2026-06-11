@@ -1,0 +1,30 @@
+{
+  "server_url": "https://legitimate-mcp.example.com",
+  "tools": [
+    {
+      "name": "query_database",
+      "description": "Query the customer database using a SQL statement. Returns results as JSON.",
+      "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}}
+    },
+    {
+      "name": "get_weather",
+      "description": "Returns current weather for a given city.",
+      "inputSchema": {"type": "object", "properties": {"city": {"type": "string"}}}
+    },
+    {
+      "name": "send_email",
+      "description": "Send an email to a recipient with a subject and body.",
+      "inputSchema": {"type": "object", "properties": {"to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}}
+    },
+    {
+      "name": "list_files",
+      "description": "List files in the user's workspace directory matching a glob pattern.",
+      "inputSchema": {"type": "object", "properties": {"pattern": {"type": "string"}}}
+    },
+    {
+      "name": "create_calendar_event",
+      "description": "Create a calendar event with a title, start time, and end time.",
+      "inputSchema": {"type": "object", "properties": {"title": {"type": "string"}, "start": {"type": "string"}, "end": {"type": "string"}}}
+    }
+  ]
+}
