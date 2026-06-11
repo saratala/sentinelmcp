@@ -65,6 +65,26 @@ services:
         condition: service_healthy
     restart: on-failure
 
+  # ── Grafana threat dashboard ────────────────────────────────────────────────
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: sentinel
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/sentinelmcp.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
   # ── Demo servers (for CISO demo only) ──────────────────────────────────────
 
   demo-clean:
@@ -85,3 +105,4 @@ services:
 
 volumes:
   postgres_data:
+  grafana_data:
