@@ -21,6 +21,7 @@ import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from app.core.allowlist import ServerAllowlist
 from app.core.auth import require_api_key
 from app.core.rate_limit import limiter
 from app.deps import get_circuit_breaker, get_context_layer, get_schema_layer
@@ -63,6 +64,20 @@ async def mcp_proxy(
 
     _p = _urlparse(x_mcp_target)
     target_url = x_mcp_target if _p.path else x_mcp_target.rstrip("/") + "/"
+
+    # LLM05: allowlist check before any validation
+    allowlist = ServerAllowlist(request.app.state.redis)
+    if not await allowlist.is_allowed(target_url):
+        log.warning("proxy_allowlist_blocked", target=target_url, session=session_id)
+        return {
+            "jsonrpc": "2.0", "id": body.get("id"),
+            "error": {
+                "code": -32003,
+                "message": "SentinelMCP: server not in allowlist — shadow MCP blocked",
+                "data": {"target": target_url, "sentinel": True,
+                         "owasp": "LLM05"},
+            },
+        }
 
     proxy = _make_proxy(schema_layer, context_layer, circuit_breaker)
     result, timing = await proxy.handle(body, target_url, session_id)
@@ -247,3 +262,38 @@ async def analyze(
         total_latency_ms=total_ms,
         recommendation=recommendation,
     )
+
+
+# ── Allowlist management (LLM05) ─────────────────────────────────────────────
+
+@router.get("/allowlist", dependencies=[Depends(require_api_key)])
+async def get_allowlist(request: Request) -> dict:
+    """List all approved MCP server URLs."""
+    al = ServerAllowlist(request.app.state.redis)
+    return {
+        "enabled": request.app.state.__dict__.get("allowlist_enabled", False),
+        "servers": await al.list_allowed(),
+        "count": await al.count(),
+    }
+
+
+@router.post("/allowlist", dependencies=[Depends(require_api_key)])
+async def add_to_allowlist(request: Request, body: dict) -> dict:
+    """Add an MCP server URL to the allowlist."""
+    server_url = body.get("server_url", "").strip()
+    if not server_url:
+        raise HTTPException(status_code=400, detail="server_url required")
+    al = ServerAllowlist(request.app.state.redis)
+    await al.add(server_url)
+    return {"added": server_url, "total": await al.count()}
+
+
+@router.delete("/allowlist", dependencies=[Depends(require_api_key)])
+async def remove_from_allowlist(request: Request, body: dict) -> dict:
+    """Remove an MCP server URL from the allowlist."""
+    server_url = body.get("server_url", "").strip()
+    if not server_url:
+        raise HTTPException(status_code=400, detail="server_url required")
+    al = ServerAllowlist(request.app.state.redis)
+    await al.remove(server_url)
+    return {"removed": server_url, "total": await al.count()}

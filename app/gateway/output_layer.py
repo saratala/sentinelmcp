@@ -17,6 +17,7 @@ from typing import Any
 import structlog
 
 from app.core.circuit_breaker import CircuitBreaker
+from app.detection.patterns import detect_pii
 from app.models.schemas import OutputInspectionResult, ThreatDetail
 
 log = structlog.get_logger(__name__)
@@ -59,8 +60,10 @@ MAX_OUTPUT_BYTES = 1_048_576  # 1 MB — truncate before scanning
 
 
 def _scan_output(text: str) -> list[ThreatDetail]:
-    """Scan output text for injection patterns. Returns a list of threats."""
+    """Scan output text for injection + PII patterns. Returns a list of threats."""
     threats: list[ThreatDetail] = []
+
+    # Existing injection patterns
     for name, pattern in _OUTPUT_PATTERNS:
         m = pattern.search(text)
         if m:
@@ -71,6 +74,18 @@ def _scan_output(text: str) -> list[ThreatDetail]:
                 match=m.group(0).strip()[:200],
                 confidence=0.90,
             ))
+
+    # LLM06: PII detection — SSN, credit cards, passwords, AWS keys, etc.
+    pii_hit = detect_pii(text)
+    if pii_hit:
+        threats.append(ThreatDetail(
+            tool="output",
+            threat_type="SENSITIVE_DISCLOSURE",
+            pattern=pii_hit["pattern"],
+            match=pii_hit["match"],
+            confidence=pii_hit["confidence"],
+        ))
+
     return threats
 
 

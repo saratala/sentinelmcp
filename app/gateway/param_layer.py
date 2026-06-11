@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 import structlog
 
+from app.detection.patterns import detect_dangerous_args
 from app.models.schemas import ParamValidationResult
 
 log = structlog.get_logger(__name__)
@@ -102,6 +103,18 @@ class ParamLayer:
             )
 
         errors = _validate_object(params, input_schema)
+
+        # LLM08: Dangerous action detection — scan all string argument values
+        # for SQL injection, shell commands, path traversal, SSRF, etc.
+        import json as _json
+        flat_args = _json.dumps(params, default=str)
+        danger = detect_dangerous_args(flat_args)
+        if danger:
+            errors.append(
+                f"dangerous_arg:{danger['pattern']}:{danger['match'][:60]}"
+            )
+            log.warning("dangerous_arg_detected", tool=tool_name,
+                        pattern=danger["pattern"])
 
         result = ParamValidationResult(
             tool_name=tool_name,
