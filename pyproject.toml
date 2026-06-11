@@ -19,6 +19,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+demo = [
+    "langchain>=0.1,<0.2",
+    "langchain-community>=0.0.20,<0.1",
+    "langgraph>=0.0.30,<0.2",
+    "faiss-cpu",
+    "aiohttp",
+]
 test = [
     "pytest",
     "pytest-asyncio",
