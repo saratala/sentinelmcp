@@ -9,6 +9,10 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="SENTINEL_", env_file=".env", extra="ignore")
 
+    # Auth
+    api_key: str = "dev-key-123"          # override via SENTINEL_API_KEY in production
+    auth_enabled: bool = True             # set SENTINEL_AUTH_ENABLED=false for local dev
+
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
