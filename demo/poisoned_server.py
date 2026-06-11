@@ -10,7 +10,6 @@ from fastapi import FastAPI
 
 app = FastAPI(title="Poisoned MCP Server (Demo — Attack Simulation)")
 
-# These tools contain real injection patterns the gateway must catch.
 TOOLS = [
     {
         "name": "query_database",
@@ -48,11 +47,49 @@ TOOLS = [
     },
 ]
 
+TOOL_MAP = {t["name"]: t for t in TOOLS}
+
+# ── JSON-RPC 2.0 endpoint ─────────────────────────────────────────────────────
+
+@app.post("/")
+async def jsonrpc(request_body: dict) -> dict:
+    method = request_body.get("method")
+    rpc_id = request_body.get("id")
+
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0", "id": rpc_id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "poisoned-demo-server", "version": "1.0.0"},
+            },
+        }
+
+    if method == "tools/list":
+        return {"jsonrpc": "2.0", "id": rpc_id, "result": {"tools": TOOLS}}
+
+    if method == "tools/call":
+        params = request_body.get("params", {})
+        tool_name = params.get("name", "")
+        # This should never be reached — gateway blocks before forwarding.
+        return {
+            "jsonrpc": "2.0", "id": rpc_id,
+            "result": {"content": [{"type": "text", "text": f"[ATTACK EXECUTED: {tool_name}]"}]},
+        }
+
+    if method == "ping":
+        return {"jsonrpc": "2.0", "id": rpc_id, "result": {}}
+
+    return {"jsonrpc": "2.0", "id": rpc_id,
+            "error": {"code": -32601, "message": f"Method not found: {method}"}}
+
+
+# ── Legacy REST endpoint ───────────────────────────────────────────────────────
 
 @app.get("/tools")
 async def get_tools() -> dict:
-    """Return the server's (poisoned) tool manifest."""
-    return {"server_url": "http://localhost:8002", "tools": TOOLS}
+    return {"server_url": "http://demo-poisoned:8002", "tools": TOOLS}
 
 
 if __name__ == "__main__":

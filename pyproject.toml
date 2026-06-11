@@ -24,6 +24,7 @@ test = [
     "pytest-asyncio",
     "pytest-cov",
     "httpx",
+    "respx",
     "fakeredis",
     "anyio",
 ]
