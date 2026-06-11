@@ -23,11 +23,14 @@ from pydantic import BaseModel, Field
 
 from app.core.allowlist import ServerAllowlist
 from app.core.auth import require_api_key
+from app.core.database import get_db
 from app.core.rate_limit import limiter
+from app.core.threat_log import log_threat
 from app.deps import get_circuit_breaker, get_context_layer, get_schema_layer
 from app.gateway.param_layer import ParamLayer
 from app.gateway.proxy import MCPProxy
 from app.gateway.validator import GatewayValidator
+from app.models.schemas import ThreatDetail
 
 log = structlog.get_logger(__name__)
 router = APIRouter(tags=["proxy"])
@@ -69,6 +72,25 @@ async def mcp_proxy(
     allowlist = ServerAllowlist(request.app.state.redis)
     if not await allowlist.is_allowed(target_url):
         log.warning("proxy_allowlist_blocked", target=target_url, session=session_id)
+        # Persist allowlist block to audit log (fire-and-forget)
+        async def _log_allowlist_block():
+            async for db in get_db():
+                await log_threat(
+                    db,
+                    server_url=target_url,
+                    tool_name="*",
+                    threat=ThreatDetail(
+                        tool="*",
+                        threat_type="SUPPLY_CHAIN",
+                        pattern="allowlist_violation",
+                        match=target_url[:200],
+                        confidence=1.0,
+                    ),
+                    layer=0,
+                    session_id=session_id,
+                    raw_payload={"method": body.get("method"), "owasp": "LLM05"},
+                )
+        asyncio.create_task(_log_allowlist_block())
         return {
             "jsonrpc": "2.0", "id": body.get("id"),
             "error": {
@@ -81,6 +103,29 @@ async def mcp_proxy(
 
     proxy = _make_proxy(schema_layer, context_layer, circuit_breaker)
     result, timing = await proxy.handle(body, target_url, session_id)
+
+    # Persist any threats detected during proxy handling (fire-and-forget)
+    threats = timing.get("threats_detail", [])
+    if threats:
+        async def _log_proxy_threats():
+            async for db in get_db():
+                for t in threats:
+                    await log_threat(
+                        db,
+                        server_url=target_url,
+                        tool_name=t.get("tool", body.get("params", {}).get("name", "unknown")),
+                        threat=ThreatDetail(
+                            tool=t.get("tool", "unknown"),
+                            threat_type=t.get("threat_type", "UNKNOWN"),
+                            pattern=t.get("pattern", ""),
+                            match=t.get("match", ""),
+                            confidence=t.get("confidence", 0.9),
+                        ),
+                        layer=t.get("layer", 1),
+                        session_id=session_id,
+                        raw_payload={"method": body.get("method"), "timing": timing},
+                    )
+        asyncio.create_task(_log_proxy_threats())
 
     response.headers["X-Sentinel-Latency"] = json.dumps(timing)
     response.headers["X-Sentinel-Session"] = session_id
