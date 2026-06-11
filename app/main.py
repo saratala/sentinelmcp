@@ -19,6 +19,7 @@ from app.core.database import close_engine, create_tables
 from app.core.rate_limit import limiter
 from app.core.redis import close_redis, get_redis
 from app.gateway.context_layer import ContextLayer
+from app.gateway.proxy_router import router as proxy_router
 from app.gateway.router import router as gateway_router
 from app.gateway.schema_layer import BackgroundRevalidator, SchemaLayer
 
@@ -85,6 +86,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(gateway_router)
+    app.include_router(proxy_router)
 
     @app.get("/health")
     async def health(request: Request) -> dict:
