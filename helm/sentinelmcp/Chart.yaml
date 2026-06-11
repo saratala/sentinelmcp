@@ -1,0 +1,17 @@
+apiVersion: v2
+name: sentinelmcp
+description: AI Agent Security Gateway for MCP connections
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+keywords:
+  - ai-security
+  - mcp
+  - llm
+  - owasp
+home: https://sentinelmcp.ai
+sources:
+  - https://github.com/saratala/sentinelmcp
+maintainers:
+  - name: Sarat Ala
+    email: saratala@gmail.com

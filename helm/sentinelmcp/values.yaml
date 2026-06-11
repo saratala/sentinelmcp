@@ -1,0 +1,145 @@
+# SentinelMCP Helm values — override with -f custom-values.yaml
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/saratala/sentinelmcp
+  pullPolicy: IfNotPresent
+  tag: ""  # defaults to Chart.appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ── API service ──────────────────────────────────────────────────────────────
+
+api:
+  port: 8888
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  env:
+    # Override via --set api.env.SENTINEL_API_KEY=your-key
+    SENTINEL_API_KEY: "change-me-in-production"
+    SENTINEL_AUTH_ENABLED: "true"
+    SENTINEL_ALLOWLIST_ENABLED: "false"
+
+# ── Worker (Celery L3 async) ─────────────────────────────────────────────────
+
+worker:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# ── Dashboard ────────────────────────────────────────────────────────────────
+
+dashboard:
+  enabled: true
+  port: 5173
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# ── Redis ─────────────────────────────────────────────────────────────────────
+
+redis:
+  enabled: true          # set false to use external Redis
+  image: redis:7-alpine
+  port: 6379
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# External Redis (used when redis.enabled=false)
+externalRedis:
+  url: ""   # redis://your-redis:6379/0
+
+# ── PostgreSQL ────────────────────────────────────────────────────────────────
+
+postgresql:
+  enabled: true          # set false to use external Postgres
+  image: postgres:16-alpine
+  port: 5432
+  auth:
+    username: sentinel
+    password: sentinel   # override in production!
+    database: sentinelmcp
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""     # use cluster default
+
+# External Postgres (used when postgresql.enabled=false)
+externalPostgresql:
+  url: ""   # postgresql+asyncpg://user:pass@host/db
+
+# ── Ingress ───────────────────────────────────────────────────────────────────
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: sentinelmcp.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api    # api | dashboard
+  tls: []
+  # - secretName: sentinelmcp-tls
+  #   hosts:
+  #     - sentinelmcp.example.com
+
+# ── Service ───────────────────────────────────────────────────────────────────
+
+service:
+  type: ClusterIP
+  apiPort: 8888
+  dashboardPort: 5173
+
+# ── Autoscaling ───────────────────────────────────────────────────────────────
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# ── Pod config ────────────────────────────────────────────────────────────────
+
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
