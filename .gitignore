@@ -1,4 +1,15 @@
 .DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.env
+
 sentinelmcp_90day_plan.jsx
 sentinelmcp_investor_brief.md
 sentinelmcp_validation_arch.jsx

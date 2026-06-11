@@ -197,7 +197,7 @@ curl -X POST http://localhost:8888/gateway/validate \
 ## Current build status
 
 - [x] POC gateway (basic detection, single file)
-- [ ] Layer 1: Schema cache + rug pull detection
+- [x] Layer 1: Schema cache + rug pull detection
 - [ ] Layer 2: Parameter validation
 - [ ] Layer 3: Async output inspection + circuit breaker
 - [ ] Layer 4: Context accumulation + semantic mosaic
