@@ -100,6 +100,27 @@ services:
       - api
     restart: on-failure
 
+  # ── SentinelMCP as an MCP Server (for agentic AI integration) ──────────────
+
+  sentinel-mcp-server:
+    build:
+      context: .
+      target: api
+    ports:
+      - "8889:8889"
+    environment:
+      <<: *app-env
+      SENTINEL_MCP_PORT: "8889"
+      CLEAN_SERVER_URL: http://demo-clean:8001
+      POISONED_SERVER_URL: http://demo-poisoned:8002
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+    command: ["python", "demo/sentinel_mcp_server.py"]
+    depends_on:
+      - api
+    profiles: ["demo"]
+    restart: on-failure
+
   # ── Demo servers (for CISO demo only) ──────────────────────────────────────
 
   demo-clean:
