@@ -15,6 +15,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.core.circuit_breaker import CircuitBreaker
+from app.core.database import close_engine, create_tables
 from app.core.rate_limit import limiter
 from app.core.redis import close_redis, get_redis
 from app.gateway.context_layer import ContextLayer
@@ -47,11 +48,13 @@ async def lifespan(app: FastAPI):
     revalidator.start()
     app.state.revalidator = revalidator
 
+    await create_tables()
     log.info("sentinelmcp_started", redis_url=settings.redis_url)
     yield
 
     await revalidator.stop()
     await close_redis()
+    await close_engine()
     log.info("sentinelmcp_stopped")
 
 
