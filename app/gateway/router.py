@@ -64,14 +64,16 @@ async def validate_schema(
                     threat=threat, layer=1, rug_pull=result.rug_pull,
                     raw_payload=result.model_dump(),
                 )
-        asyncio.create_task(asyncio.gather(*[
-            fire_alert(
-                server_url=req.server_url, tool_name=t.tool,
-                threat_type=t.threat_type, pattern=t.pattern,
-                match_text=t.match, confidence=t.confidence,
-                layer=1, rug_pull=result.rug_pull,
-            ) for t in result.threats
-        ]))
+        async def _fire_alerts():
+            await asyncio.gather(*[
+                fire_alert(
+                    server_url=req.server_url, tool_name=t.tool,
+                    threat_type=t.threat_type, pattern=t.pattern,
+                    match_text=t.match, confidence=t.confidence,
+                    layer=1, rug_pull=result.rug_pull,
+                ) for t in result.threats
+            ])
+        asyncio.create_task(_fire_alerts())
 
     status_code = 200 if result.passed else 403
     return {"status_code": status_code, **result.model_dump()}
