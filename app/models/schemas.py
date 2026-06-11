@@ -1,4 +1,4 @@
-"""Pydantic request/response models for the schema layer (Layer 1)."""
+"""Pydantic request/response models for all gateway layers."""
 from __future__ import annotations
 
 from typing import Any
@@ -16,10 +16,10 @@ class Tool(BaseModel):
 
 
 class ThreatDetail(BaseModel):
-    """A single detected threat within a tool schema."""
+    """A single detected threat within a tool schema or output."""
 
     tool: str
-    threat_type: str            # TOOL_POISONING | RUG_PULL
+    threat_type: str            # TOOL_POISONING | RUG_PULL | OUTPUT_INJECTION
     pattern: str
     match: str
     confidence: float
@@ -40,4 +40,28 @@ class SchemaValidationResult(BaseModel):
     total_tools: int = 0
     blocked_tools: int = 0
     validated_at: str = ""
+    latency_ms: float = 0.0
+
+
+# ── Layer 2 ───────────────────────────────────────────────────────────────────
+
+class ParamValidationResult(BaseModel):
+    """Outcome of validating one tool invocation's parameters through Layer 2."""
+
+    tool_name: str
+    passed: bool
+    errors: list[str] = Field(default_factory=list)
+    latency_ms: float = 0.0
+
+
+# ── Layer 3 ───────────────────────────────────────────────────────────────────
+
+class OutputInspectionResult(BaseModel):
+    """Outcome of inspecting one tool's output through Layer 3."""
+
+    session_id: str
+    tool_name: str
+    passed: bool
+    threats: list[ThreatDetail] = Field(default_factory=list)
+    circuit_tripped: bool = False
     latency_ms: float = 0.0
