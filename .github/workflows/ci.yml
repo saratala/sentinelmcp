@@ -21,7 +21,7 @@ jobs:
           POSTGRES_PASSWORD: sentinel
           POSTGRES_DB: sentinelmcp
         ports: ["5432:5432"]
-        options: --health-cmd "pg_isready -U sentinel" --health-interval 5s --health-timeout 3s --health-retries 5
+        options: --health-cmd "pg_isready -U sentinel -d sentinelmcp" --health-interval 5s --health-timeout 3s --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[test]"
 
       - name: Run tests
         env:
@@ -40,7 +40,7 @@ jobs:
           SENTINEL_POSTGRES_URL: postgresql+asyncpg://sentinel:sentinel@localhost/sentinelmcp
           SENTINEL_API_KEY: test-key
           SENTINEL_AUTH_ENABLED: "false"
-        run: pytest tests/ -q --tb=short
+        run: python -m pytest tests/ -q --tb=short
 
   build-and-push:
     needs: test
