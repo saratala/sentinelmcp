@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     datadog_api_key: str = ""
     webhook_url: str = ""
 
+    # OpenTelemetry
+    otel_endpoint: str = ""          # SENTINEL_OTEL_ENDPOINT e.g. http://localhost:4317
+    otel_service_name: str = "sentinelmcp"  # SENTINEL_OTEL_SERVICE_NAME
+
+    # JWT / OAuth
+    jwt_issuer: str = ""             # SENTINEL_JWT_ISSUER
+    jwt_audience: str = ""           # SENTINEL_JWT_AUDIENCE
+    jwt_secret: str = ""             # SENTINEL_JWT_SECRET (HS256 shared secret)
+    jwks_url: str = ""               # SENTINEL_JWKS_URL (RS256 JWKS endpoint)
+
 
 def get_settings() -> Settings:
     """Return a fresh Settings instance read from the environment."""

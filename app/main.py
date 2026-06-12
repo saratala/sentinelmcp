@@ -19,7 +19,10 @@ from app.core.database import close_engine, create_tables
 from app.core.rate_limit import limiter
 from app.core.redis import close_redis, get_redis
 from app.gateway.context_layer import ContextLayer
+from app.gateway.adapters_router import router as adapters_router
+from app.gateway.auth_router import router as auth_router
 from app.gateway.keys_router import router as keys_router
+from app.gateway.probe_router import router as probe_router
 from app.gateway.proxy_router import router as proxy_router
 from app.gateway.router import router as gateway_router
 from app.gateway.schema_layer import BackgroundRevalidator, SchemaLayer
@@ -69,6 +72,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    from app.core.telemetry import setup_telemetry
+    setup_telemetry(app)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -89,6 +95,9 @@ def create_app() -> FastAPI:
     app.include_router(gateway_router)
     app.include_router(proxy_router)
     app.include_router(keys_router)
+    app.include_router(auth_router)
+    app.include_router(probe_router)
+    app.include_router(adapters_router)
 
     @app.get("/health")
     async def health(request: Request) -> dict:

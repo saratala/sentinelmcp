@@ -5,6 +5,7 @@ x-app-env: &app-env
   SENTINEL_CELERY_RESULT_BACKEND: redis://:${SENTINEL_REDIS_PASSWORD:-sentinelredis}@redis:6379/1
   SENTINEL_POSTGRES_URL: postgresql+asyncpg://sentinel:${SENTINEL_POSTGRES_PASSWORD:-sentinel}@postgres/sentinelmcp
   SENTINEL_API_KEY: ${SENTINEL_API_KEY:-dev-key-123}
+  SENTINEL_OTEL_ENDPOINT: ${SENTINEL_OTEL_ENDPOINT:-}
 
 services:
 
@@ -143,6 +144,17 @@ services:
     ports:
       - "8002:8002"
     profiles: ["demo"]
+
+  # ── Observability (Jaeger) ──────────────────────────────────────────────────
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC receiver
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    profiles: ["observability"]
 
 volumes:
   postgres_data:

@@ -70,7 +70,7 @@ async def test_health_endpoint_no_auth_required(client):
 @pytest.mark.asyncio
 async def test_missing_key_rejected(client):
     r = await client.post("/gateway/validate-schema", json=SCHEMA_PAYLOAD)
-    assert r.status_code == 422  # missing required header → FastAPI validation error
+    assert r.status_code == 401  # missing auth → 401 (supports both key and Bearer JWT)
 
 
 @pytest.mark.asyncio
@@ -105,13 +105,13 @@ async def test_invoke_requires_auth(client):
             "input_schema": {},
         },
     )
-    assert r.status_code == 422  # missing header
+    assert r.status_code == 401  # missing auth → 401
 
 
 @pytest.mark.asyncio
 async def test_inventory_requires_auth(client):
     r = await client.get("/gateway/inventory")
-    assert r.status_code == 422
+    assert r.status_code == 401
 
 
 # ── Redis-provisioned key ─────────────────────────────────────────────────────
