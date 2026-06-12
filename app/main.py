@@ -44,10 +44,14 @@ async def lifespan(app: FastAPI):
     app.state.context_layer = ContextLayer(
         redis,
         llm_analysis_enabled=settings.llm_analysis_enabled,
+        llm_provider=settings.llm_provider,
+        ollama_url=settings.ollama_url,
+        ollama_model=settings.ollama_model,
         anthropic_api_key=settings.anthropic_api_key,
         llm_analysis_model=settings.llm_analysis_model,
         llm_grey_zone_min=settings.llm_grey_zone_min,
         llm_grey_zone_max=settings.llm_grey_zone_max,
+        llm_timeout_secs=settings.llm_timeout_secs,
     )
     app.state.circuit_breaker = CircuitBreaker(redis)
     app.state.redis = redis
