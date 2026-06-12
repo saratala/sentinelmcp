@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.alerts import fire_alert
-from app.core.auth import require_api_key
+from app.core.auth import AuthContext, require_api_key
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.core.threat_log import get_recent_threats, log_threat
@@ -49,7 +49,7 @@ async def validate_schema(
     request: Request,
     req: SchemaValidateRequest,
     schema_layer: SchemaLayer = Depends(get_schema_layer),
-    _key: str = Depends(require_api_key),
+    _auth: AuthContext = Depends(require_api_key),
 ) -> dict:
     """Layer 1 — validate and cache a server's tool schemas."""
     if not req.server_url:
@@ -63,6 +63,7 @@ async def validate_schema(
                     db, server_url=req.server_url, tool_name=threat.tool,
                     threat=threat, layer=1, rug_pull=result.rug_pull,
                     raw_payload=result.model_dump(),
+                    tenant_id=_auth.tenant_id,
                 )
         async def _fire_alerts():
             await asyncio.gather(*[
@@ -87,7 +88,7 @@ async def invoke_tool(
     schema_layer: SchemaLayer = Depends(get_schema_layer),
     context_layer: ContextLayer = Depends(get_context_layer),
     circuit_breaker: CircuitBreaker = Depends(get_circuit_breaker),
-    _key: str = Depends(require_api_key),
+    _auth: AuthContext = Depends(require_api_key),
 ) -> dict:
     """Layers 2 + 3 + 4 — validate a tool invocation."""
     if not req.session_id or not req.tool_name:
@@ -114,7 +115,7 @@ async def invoke_tool(
 async def get_inventory(
     request: Request,
     schema_layer: SchemaLayer = Depends(get_schema_layer),
-    _key: str = Depends(require_api_key),
+    _auth: AuthContext = Depends(require_api_key),
 ) -> dict:
     """Return all known MCP servers and their cached security status."""
     servers = await schema_layer.list_cached_servers()
@@ -139,7 +140,7 @@ async def reset_circuit(
     request: Request,
     session_id: str,
     circuit_breaker: CircuitBreaker = Depends(get_circuit_breaker),
-    _key: str = Depends(require_api_key),
+    _auth: AuthContext = Depends(require_api_key),
 ) -> dict:
     """Manually reset a session's circuit breaker after admin review."""
     await circuit_breaker.reset(session_id)
@@ -155,7 +156,7 @@ async def get_threats(
     server_url: Optional[str] = None,
     threat_type: Optional[str] = None,
     since: Optional[str] = None,        # ISO-8601 e.g. 2025-01-01T00:00:00Z
-    _key: str = Depends(require_api_key),
+    _auth: AuthContext = Depends(require_api_key),
 ) -> dict:
     """Return paginated threat events from the PostgreSQL audit log."""
     from datetime import datetime, timezone
@@ -171,6 +172,8 @@ async def get_threats(
 
     async for db in get_db():
         q = select(ThreatEvent).order_by(desc(ThreatEvent.timestamp))
+        if _auth.tenant_id is not None:
+            q = q.where(ThreatEvent.tenant_id == _auth.tenant_id)
         if server_url:
             q = q.where(ThreatEvent.server_url == server_url)
         if threat_type:
@@ -211,7 +214,7 @@ async def get_threats(
 async def get_threat_stats(
     request: Request,
     days: int = 30,
-    _key: str = Depends(require_api_key),
+    _auth: AuthContext = Depends(require_api_key),
 ) -> dict:
     """Aggregate threat counts by type and layer for the dashboard."""
     from datetime import datetime, timedelta, timezone
@@ -220,9 +223,15 @@ async def get_threat_stats(
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     async for db in get_db():
+        # Build a reusable base filter so tenant isolation is applied uniformly.
+        from sqlalchemy import and_
+        base_filter = [ThreatEvent.timestamp >= cutoff]
+        if _auth.tenant_id is not None:
+            base_filter.append(ThreatEvent.tenant_id == _auth.tenant_id)
+
         by_type_q = (
             select(ThreatEvent.threat_type, func.count().label("count"))
-            .where(ThreatEvent.timestamp >= cutoff)
+            .where(*base_filter)
             .group_by(ThreatEvent.threat_type)
         )
         by_type = {row.threat_type: row.count
@@ -230,18 +239,18 @@ async def get_threat_stats(
 
         by_layer_q = (
             select(ThreatEvent.layer, func.count().label("count"))
-            .where(ThreatEvent.timestamp >= cutoff)
+            .where(*base_filter)
             .group_by(ThreatEvent.layer)
         )
         by_layer = {f"L{row.layer}": row.count
                     for row in (await db.execute(by_layer_q)).all()}
 
-        total_q = select(func.count()).where(ThreatEvent.timestamp >= cutoff)
+        total_q = select(func.count()).where(*base_filter)
         total = (await db.execute(total_q)).scalar_one()
 
         rug_pull_q = (
             select(func.count())
-            .where(ThreatEvent.timestamp >= cutoff)
+            .where(*base_filter)
             .where(ThreatEvent.rug_pull.is_(True))
         )
         rug_pulls = (await db.execute(rug_pull_q)).scalar_one()
@@ -260,7 +269,7 @@ async def get_threat_stats(
 async def export_threats_csv(
     request: Request,
     days: int = 30,
-    _key: str = Depends(require_api_key),
+    _auth: AuthContext = Depends(require_api_key),
 ) -> Response:
     """Export threat audit log as CSV — for compliance reports (PCI DSS, SOC2)."""
     import csv
@@ -275,6 +284,8 @@ async def export_threats_csv(
         q = (select(ThreatEvent)
              .where(ThreatEvent.timestamp >= cutoff)
              .order_by(desc(ThreatEvent.timestamp)))
+        if _auth.tenant_id is not None:
+            q = q.where(ThreatEvent.tenant_id == _auth.tenant_id)
         rows = (await db.execute(q)).scalars().all()
 
     buf = io.StringIO()
@@ -305,7 +316,7 @@ async def export_threats_csv(
 async def compliance_report(
     request: Request,
     days: int = 30,
-    _key: str = Depends(require_api_key),
+    _auth: AuthContext = Depends(require_api_key),
 ) -> dict:
     """Generate a PCI DSS / SOC2 compliance summary for the last N days."""
     from datetime import datetime, timedelta, timezone
@@ -316,26 +327,32 @@ async def compliance_report(
     generated_at = datetime.now(timezone.utc).isoformat()
 
     async for db in get_db():
-        total_q = select(func.count()).where(ThreatEvent.timestamp >= cutoff)
+        # Reusable base filter for tenant isolation.
+        from sqlalchemy import and_
+        base_filter = [ThreatEvent.timestamp >= cutoff]
+        if _auth.tenant_id is not None:
+            base_filter.append(ThreatEvent.tenant_id == _auth.tenant_id)
+
+        total_q = select(func.count()).where(*base_filter)
         total_threats = (await db.execute(total_q)).scalar_one()
 
         blocked_q = (select(func.count())
-                     .where(ThreatEvent.timestamp >= cutoff)
+                     .where(*base_filter)
                      .where(ThreatEvent.blocked.is_(True)))
         total_blocked = (await db.execute(blocked_q)).scalar_one()
 
         rug_q = (select(func.count())
-                 .where(ThreatEvent.timestamp >= cutoff)
+                 .where(*base_filter)
                  .where(ThreatEvent.rug_pull.is_(True)))
         rug_pulls = (await db.execute(rug_q)).scalar_one()
 
         pii_q = (select(func.count())
-                 .where(ThreatEvent.timestamp >= cutoff)
+                 .where(*base_filter)
                  .where(ThreatEvent.threat_type == "SENSITIVE_DISCLOSURE"))
         pii_blocked = (await db.execute(pii_q)).scalar_one()
 
         injection_q = (select(func.count())
-                       .where(ThreatEvent.timestamp >= cutoff)
+                       .where(*base_filter)
                        .where(ThreatEvent.threat_type == "PROMPT_INJECTION"))
         injection_blocked = (await db.execute(injection_q)).scalar_one()
 

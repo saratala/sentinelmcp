@@ -9,7 +9,7 @@
   "panels": [
     {
       "id": 1,
-      "title": "Total Threats Detected",
+      "title": "Total Threats (Last 24h)",
       "type": "stat",
       "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
       "options": {
@@ -21,13 +21,16 @@
       "fieldConfig": {
         "defaults": {
           "color": { "fixedColor": "red", "mode": "fixed" },
-          "thresholds": { "steps": [{ "color": "red", "value": 0 }] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": 0 }]
+          }
         }
       },
       "targets": [
         {
-          "datasource": "SentinelMCP",
-          "rawSql": "SELECT COUNT(*) AS value FROM threat_events WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "datasource": { "type": "postgres", "uid": "SentinelMCP" },
+          "rawSql": "SELECT COUNT(*) AS value FROM threat_events WHERE timestamp > now() - interval '24 hours'",
           "format": "table",
           "refId": "A"
         }
@@ -35,23 +38,33 @@
     },
     {
       "id": 2,
-      "title": "Rug Pulls",
+      "title": "Block Rate %",
       "type": "stat",
       "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
       "options": {
         "colorMode": "background",
         "graphMode": "none",
+        "textMode": "auto",
         "reduceOptions": { "calcs": ["lastNotNull"] }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "fixedColor": "orange", "mode": "fixed" }
+          "unit": "percent",
+          "color": { "fixedColor": "orange", "mode": "fixed" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "orange", "value": 50 },
+              { "color": "green", "value": 80 }
+            ]
+          }
         }
       },
       "targets": [
         {
-          "datasource": "SentinelMCP",
-          "rawSql": "SELECT COUNT(*) AS value FROM threat_events WHERE rug_pull = true AND timestamp >= NOW() - INTERVAL '24 hours'",
+          "datasource": { "type": "postgres", "uid": "SentinelMCP" },
+          "rawSql": "SELECT ROUND(100.0 * SUM(CASE WHEN blocked THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS value FROM threat_events WHERE timestamp > now() - interval '24 hours'",
           "format": "table",
           "refId": "A"
         }
@@ -59,23 +72,28 @@
     },
     {
       "id": 3,
-      "title": "Servers Blocked",
+      "title": "Active Sessions (Last 1h)",
       "type": "stat",
       "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
       "options": {
         "colorMode": "background",
         "graphMode": "none",
+        "textMode": "auto",
         "reduceOptions": { "calcs": ["lastNotNull"] }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "fixedColor": "dark-red", "mode": "fixed" }
+          "color": { "fixedColor": "blue", "mode": "fixed" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": 0 }]
+          }
         }
       },
       "targets": [
         {
-          "datasource": "SentinelMCP",
-          "rawSql": "SELECT COUNT(DISTINCT server_url) AS value FROM threat_events WHERE timestamp >= NOW() - INTERVAL '24 hours'",
+          "datasource": { "type": "postgres", "uid": "SentinelMCP" },
+          "rawSql": "SELECT COUNT(DISTINCT session_id) AS value FROM threat_events WHERE timestamp > now() - interval '1 hour'",
           "format": "table",
           "refId": "A"
         }
@@ -83,31 +101,7 @@
     },
     {
       "id": 4,
-      "title": "Detection Layers Hit",
-      "type": "stat",
-      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": { "calcs": ["lastNotNull"] }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "fixedColor": "blue", "mode": "fixed" }
-        }
-      },
-      "targets": [
-        {
-          "datasource": "SentinelMCP",
-          "rawSql": "SELECT COUNT(DISTINCT layer) AS value FROM threat_events WHERE timestamp >= NOW() - INTERVAL '24 hours'",
-          "format": "table",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 5,
-      "title": "Threats Over Time",
+      "title": "Threats Over Time (7 Days)",
       "type": "timeseries",
       "gridPos": { "x": 0, "y": 4, "w": 24, "h": 8 },
       "options": {
@@ -122,23 +116,60 @@
       },
       "targets": [
         {
-          "datasource": "SentinelMCP",
-          "rawSql": "SELECT DATE_TRUNC('minute', timestamp) AS time, threat_type, COUNT(*) AS count FROM threat_events WHERE $__timeFilter(timestamp) GROUP BY 1, 2 ORDER BY 1",
+          "datasource": { "type": "postgres", "uid": "SentinelMCP" },
+          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, count(*) AS threats FROM threat_events WHERE $__timeFilter(timestamp) GROUP BY 1 ORDER BY 1",
           "format": "time_series",
           "refId": "A"
         }
       ]
     },
     {
-      "id": 6,
-      "title": "Threats by Type",
-      "type": "piechart",
-      "gridPos": { "x": 0, "y": 12, "w": 8, "h": 8 },
-      "options": { "pieType": "pie", "displayLabels": ["name", "percent"] },
+      "id": 5,
+      "title": "OWASP Breakdown by Threat Type",
+      "type": "barchart",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "options": {
+        "orientation": "horizontal",
+        "xTickLabelRotation": 0,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 80 }
+        }
+      },
       "targets": [
         {
-          "datasource": "SentinelMCP",
-          "rawSql": "SELECT threat_type AS metric, COUNT(*) AS value FROM threat_events WHERE $__timeFilter(timestamp) GROUP BY threat_type ORDER BY value DESC",
+          "datasource": { "type": "postgres", "uid": "SentinelMCP" },
+          "rawSql": "SELECT threat_type, count(*) AS count FROM threat_events WHERE $__timeFilter(timestamp) GROUP BY threat_type ORDER BY count DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Threats by Layer",
+      "type": "barchart",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "options": {
+        "orientation": "vertical",
+        "xTickLabelRotation": 0,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 80 }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "SentinelMCP" },
+          "rawSql": "SELECT layer::text AS layer, count(*) AS count FROM threat_events WHERE $__timeFilter(timestamp) GROUP BY layer ORDER BY layer",
           "format": "table",
           "refId": "A"
         }
@@ -146,87 +177,54 @@
     },
     {
       "id": 7,
-      "title": "Threats by Detection Layer",
-      "type": "piechart",
-      "gridPos": { "x": 8, "y": 12, "w": 8, "h": 8 },
-      "options": { "pieType": "donut", "displayLabels": ["name", "percent"] },
+      "title": "Block Rate Over Time",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 8 },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
       "targets": [
         {
-          "datasource": "SentinelMCP",
-          "rawSql": "SELECT CONCAT('Layer ', layer) AS metric, COUNT(*) AS value FROM threat_events WHERE $__timeFilter(timestamp) GROUP BY layer ORDER BY layer",
-          "format": "table",
+          "datasource": { "type": "postgres", "uid": "SentinelMCP" },
+          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, ROUND(100.0 * SUM(CASE WHEN blocked THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS block_rate FROM threat_events WHERE $__timeFilter(timestamp) GROUP BY 1 ORDER BY 1",
+          "format": "time_series",
           "refId": "A"
         }
       ]
     },
     {
       "id": 8,
-      "title": "Top Attacked Servers",
-      "type": "bargauge",
-      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
-      "options": {
-        "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "displayMode": "gradient"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "continuous-RdYlGr" },
-          "thresholds": {
-            "steps": [
-              { "color": "green", "value": 0 },
-              { "color": "orange", "value": 3 },
-              { "color": "red", "value": 10 }
-            ]
-          }
-        }
-      },
-      "targets": [
-        {
-          "datasource": "SentinelMCP",
-          "rawSql": "SELECT server_url AS metric, COUNT(*) AS value FROM threat_events WHERE $__timeFilter(timestamp) GROUP BY server_url ORDER BY value DESC LIMIT 10",
-          "format": "table",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 9,
-      "title": "Live Threat Feed",
+      "title": "Recent Threats (Last 50)",
       "type": "table",
-      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 10 },
+      "gridPos": { "x": 0, "y": 28, "w": 24, "h": 10 },
       "options": {
         "sortBy": [{ "displayName": "timestamp", "desc": true }],
         "footer": { "show": false }
       },
       "fieldConfig": {
-        "defaults": { "custom": { "displayMode": "auto" } },
+        "defaults": {
+          "custom": { "displayMode": "auto" }
+        },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "severity" },
-            "properties": [
-              {
-                "id": "custom.displayMode",
-                "value": "color-background"
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  { "type": "value", "options": { "CRITICAL": { "color": "dark-red", "index": 0 } } },
-                  { "type": "value", "options": { "HIGH": { "color": "orange", "index": 1 } } }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "rug_pull" },
+            "matcher": { "id": "byName", "options": "blocked" },
             "properties": [
               { "id": "custom.displayMode", "value": "color-background" },
               {
                 "id": "mappings",
                 "value": [
-                  { "type": "value", "options": { "true": { "color": "dark-red", "index": 0 } } },
-                  { "type": "value", "options": { "false": { "color": "green", "index": 1 } } }
+                  { "type": "value", "options": { "true": { "color": "dark-red", "index": 0, "text": "BLOCKED" } } },
+                  { "type": "value", "options": { "false": { "color": "green", "index": 1, "text": "ALLOWED" } } }
                 ]
               }
             ]
@@ -235,8 +233,8 @@
       },
       "targets": [
         {
-          "datasource": "SentinelMCP",
-          "rawSql": "SELECT timestamp, severity, threat_type, tool_name, server_url, pattern, confidence, rug_pull, layer FROM threat_events WHERE $__timeFilter(timestamp) ORDER BY timestamp DESC LIMIT 50",
+          "datasource": { "type": "postgres", "uid": "SentinelMCP" },
+          "rawSql": "SELECT timestamp, threat_type, tool_name, layer, blocked, pattern FROM threat_events WHERE $__timeFilter(timestamp) ORDER BY timestamp DESC LIMIT 50",
           "format": "table",
           "refId": "A"
         }

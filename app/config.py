@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     splunk_hec_token: str = ""
     datadog_api_key: str = ""
     webhook_url: str = ""
+    slack_webhook_url: str = ""        # SENTINEL_SLACK_WEBHOOK_URL
+    pagerduty_routing_key: str = ""    # SENTINEL_PAGERDUTY_ROUTING_KEY
 
     # OpenTelemetry
     otel_endpoint: str = ""          # SENTINEL_OTEL_ENDPOINT e.g. http://localhost:4317

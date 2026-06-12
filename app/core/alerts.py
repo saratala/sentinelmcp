@@ -1,4 +1,4 @@
-"""SIEM alert integrations — Splunk HEC, Datadog, and generic webhook.
+"""SIEM alert integrations — Splunk HEC, Datadog, Slack, PagerDuty, and generic webhook.
 
 Every confirmed threat fires all configured sinks concurrently.
 Failures are logged but never raise — alerting must never block the gateway.
@@ -92,6 +92,109 @@ async def _send_webhook(event: dict) -> None:
         r.raise_for_status()
 
 
+# Severity helpers shared by Slack and PagerDuty sinks.
+_SEVERITY_COLOR = {
+    "CRITICAL": "#FF0000",
+    "HIGH": "#FFA500",
+    "MEDIUM": "#FFFF00",
+    "LOW": "#36A64F",
+}
+
+_PAGERDUTY_SEVERITY = {
+    "CRITICAL": "critical",
+    "HIGH": "error",
+    "MEDIUM": "warning",
+    "LOW": "info",
+}
+
+
+async def _send_slack(event: dict) -> None:
+    """Send a Slack notification via an Incoming Webhook URL.
+
+    Only fires for HIGH or CRITICAL severity so low-noise signals don't flood
+    the channel.  The severity is derived from the ``severity`` field set by
+    ``_base_event`` (CRITICAL when rug_pull=True, HIGH otherwise).
+    """
+    if not settings.slack_webhook_url:
+        return
+
+    severity: str = event.get("severity", "HIGH").upper()
+    if severity not in ("CRITICAL", "HIGH"):
+        return
+
+    color = _SEVERITY_COLOR.get(severity, "#FFA500")
+    summary = (
+        f"[{severity}] SentinelMCP detected *{event['threat_type']}* "
+        f"on tool `{event['tool_name']}`"
+    )
+    payload = {
+        "text": summary,
+        "attachments": [
+            {
+                "color": color,
+                "fields": [
+                    {"title": "Threat Type", "value": event["threat_type"], "short": True},
+                    {"title": "Tool", "value": event["tool_name"], "short": True},
+                    {"title": "Layer", "value": str(event["layer"]), "short": True},
+                    {"title": "Session ID", "value": event.get("session_id") or "n/a", "short": True},
+                    {"title": "Timestamp", "value": event["timestamp"], "short": False},
+                ],
+            }
+        ],
+    }
+    async with httpx.AsyncClient(timeout=5) as client:
+        r = await client.post(settings.slack_webhook_url, json=payload)
+        r.raise_for_status()
+
+
+async def _send_pagerduty(event: dict) -> None:
+    """Trigger a PagerDuty incident via the Events API v2.
+
+    Uses a dedup_key based on session_id + threat_type so that repeated alerts
+    from the same session are de-duplicated rather than creating a flood of
+    individual incidents.
+    """
+    if not settings.pagerduty_routing_key:
+        return
+
+    severity: str = event.get("severity", "HIGH").upper()
+    pd_severity = _PAGERDUTY_SEVERITY.get(severity, "error")
+
+    session_id = event.get("session_id") or "unknown"
+    dedup_key = f"sentinel-{session_id}-{event['threat_type']}"
+
+    payload = {
+        "routing_key": settings.pagerduty_routing_key,
+        "event_action": "trigger",
+        "dedup_key": dedup_key,
+        "payload": {
+            "summary": (
+                f"SentinelMCP [{severity}]: {event['threat_type']} on {event['tool_name']}"
+            ),
+            "severity": pd_severity,
+            "source": "sentinelmcp",
+            "component": event["tool_name"],
+            "custom_details": {
+                "threat_type": event["threat_type"],
+                "layer": event["layer"],
+                "pattern": event["pattern"],
+                "match": event["match"],
+                "confidence": event["confidence"],
+                "session_id": session_id,
+                "server_url": event["server_url"],
+                "rug_pull": event.get("rug_pull", False),
+                "timestamp": event["timestamp"],
+            },
+        },
+    }
+    async with httpx.AsyncClient(timeout=5) as client:
+        r = await client.post(
+            "https://events.pagerduty.com/v2/enqueue",
+            json=payload,
+        )
+        r.raise_for_status()
+
+
 async def fire_alert(
     server_url: str,
     tool_name: str,
@@ -120,10 +223,16 @@ async def fire_alert(
         rug_pull=rug_pull,
     )
 
-    sinks = [_send_splunk(event), _send_datadog(event), _send_webhook(event)]
+    sinks = [
+        _send_splunk(event),
+        _send_datadog(event),
+        _send_webhook(event),
+        _send_slack(event),
+        _send_pagerduty(event),
+    ]
     results = await asyncio.gather(*sinks, return_exceptions=True)
 
-    for sink_name, result in zip(["splunk", "datadog", "webhook"], results):
+    for sink_name, result in zip(["splunk", "datadog", "webhook", "slack", "pagerduty"], results):
         if isinstance(result, Exception):
             log.warning("siem_alert_failed", sink=sink_name, error=str(result))
         else:
