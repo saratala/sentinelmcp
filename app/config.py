@@ -60,11 +60,18 @@ class Settings(BaseSettings):
 
     # Layer 4 — LLM-based semantic analysis for grey-zone risk scores
     llm_analysis_enabled: bool = True          # SENTINEL_LLM_ANALYSIS_ENABLED
+    # Provider: "auto" (default) | "ollama" | "anthropic"
+    # auto = use Ollama if SENTINEL_OLLAMA_URL is reachable, else Anthropic if key set, else skip
+    llm_provider: str = "auto"                 # SENTINEL_LLM_PROVIDER
+    ollama_url: str = "http://localhost:11434" # SENTINEL_OLLAMA_URL
+    ollama_model: str = "qwen2.5:7b"          # SENTINEL_OLLAMA_MODEL
     # ANTHROPIC_API_KEY uses the standard key name (no SENTINEL_ prefix)
     anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
-    llm_analysis_model: str = "claude-haiku-4-5-20251001"  # SENTINEL_LLM_ANALYSIS_MODEL
+    llm_analysis_model: str = "claude-haiku-4-5-20251001"  # SENTINEL_LLM_ANALYSIS_MODEL (Anthropic)
     llm_grey_zone_min: float = 0.35            # SENTINEL_LLM_GREY_ZONE_MIN
     llm_grey_zone_max: float = 0.75            # SENTINEL_LLM_GREY_ZONE_MAX
+    # Timeout for LLM call: 8s for local Ollama, 3s for cloud Anthropic
+    llm_timeout_secs: float = 8.0             # SENTINEL_LLM_TIMEOUT_SECS
 
 
 def get_settings() -> Settings:

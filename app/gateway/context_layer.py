@@ -106,19 +106,27 @@ class ContextLayer:
         window_size: int = WINDOW_SIZE,
         risk_threshold: float = RISK_THRESHOLD,
         llm_analysis_enabled: bool = False,
+        llm_provider: str = "auto",
+        ollama_url: str = "http://localhost:11434",
+        ollama_model: str = "qwen2.5:7b",
         anthropic_api_key: str = "",
         llm_analysis_model: str = "claude-haiku-4-5-20251001",
         llm_grey_zone_min: float = 0.35,
         llm_grey_zone_max: float = 0.75,
+        llm_timeout_secs: float = 8.0,
     ) -> None:
         self._redis = redis_client
         self._window = window_size
         self._threshold = risk_threshold
         self._llm_enabled = llm_analysis_enabled
+        self._llm_provider = llm_provider
+        self._ollama_url = ollama_url
+        self._ollama_model = ollama_model
         self._anthropic_api_key = anthropic_api_key
         self._llm_model = llm_analysis_model
         self._grey_zone_min = llm_grey_zone_min
         self._grey_zone_max = llm_grey_zone_max
+        self._llm_timeout = llm_timeout_secs
 
     def _key(self, session_id: str) -> str:
         return f"ctx:{session_id}"
@@ -165,10 +173,13 @@ class ContextLayer:
                     window=window,
                     category_scores=category_scores,
                     tfidf_risk=tfidf_risk,
+                    provider=self._llm_provider,
+                    ollama_url=self._ollama_url,
+                    ollama_model=self._ollama_model,
                     api_key=self._anthropic_api_key,
                     model=self._llm_model,
                 ),
-                timeout=3.0,
+                timeout=self._llm_timeout,
             )
         except asyncio.TimeoutError:
             log.warning(
