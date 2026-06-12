@@ -10,6 +10,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    Index,
     String,
     Text,
     Uuid,
@@ -54,5 +55,35 @@ class ThreatEvent(Base):
     blocked: Mapped[bool] = mapped_column(Boolean, default=True)
     rug_pull: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Tenant isolation — which API key triggered this event
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+
     # Full payload for SIEM / audit
     raw_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class ApiKey(Base):
+    """Per-tenant API key registry — stored as SHA-256 hash, never raw."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Identity
+    label: Mapped[str] = mapped_column(String(256), index=True)  # e.g. "acme-corp-prod"
+    tenant_id: Mapped[str] = mapped_column(String(128), index=True)
+
+    # Security
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    key_prefix: Mapped[str] = mapped_column(String(16))  # first 8 chars for display
+
+    # Scopes and limits
+    rate_limit_per_min: Mapped[int] = mapped_column(default=600)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

@@ -13,8 +13,9 @@ class Settings(BaseSettings):
     api_key: str = "dev-key-123"          # override via SENTINEL_API_KEY in production
     auth_enabled: bool = True             # set SENTINEL_AUTH_ENABLED=false for local dev
 
-    # Redis
+    # Redis — set SENTINEL_REDIS_PASSWORD in production (non-empty enables AUTH)
     redis_url: str = "redis://localhost:6379/0"
+    redis_password: str = ""   # SENTINEL_REDIS_PASSWORD
 
     # PostgreSQL
     postgres_url: str = "postgresql+asyncpg://sentinel:sentinel@localhost/sentinelmcp"

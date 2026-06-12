@@ -1,0 +1,138 @@
+# SentinelMCP Policy File — default.yaml
+# Edit this file to add/remove detection rules without redeploying.
+# Changes are hot-reloaded every 60 seconds.
+#
+# Rule structure:
+#   name:        unique identifier (used in threat logs and audit reports)
+#   layer:       1 (schema), 2 (params), 3 (output)  — which layer runs it
+#   type:        regex | keyword
+#   pattern:     regex string (for type: regex)
+#   keywords:    list of strings (for type: keyword, any match = threat)
+#   threat_type: threat category written to the audit log
+#   confidence:  0.0–1.0
+#   enabled:     true/false — toggle without deleting
+#   owasp_id:    LLM01–LLM10 reference
+
+version: "1"
+
+rules:
+
+  # ── LLM01: Prompt Injection ─────────────────────────────────────────────────
+
+  - name: ignore_instructions
+    layer: 1
+    type: regex
+    pattern: "ignore\\s+(all\\s+)?(previous|prior|above)\\s+instructions?"
+    threat_type: PROMPT_INJECTION
+    confidence: 0.95
+    enabled: true
+    owasp_id: LLM01
+
+  - name: exfiltration_url
+    layer: 1
+    type: regex
+    pattern: "(export|send|exfiltrate|upload|post|forward)\\s+.{0,50}(to|at|via)\\s+https?://"
+    threat_type: PROMPT_INJECTION
+    confidence: 0.95
+    enabled: true
+    owasp_id: LLM01
+
+  - name: conceal_from_user
+    layer: 1
+    type: regex
+    pattern: "do\\s+not\\s+(tell|inform|notify|mention)\\s+(the\\s+)?(user|operator|human)"
+    threat_type: PROMPT_INJECTION
+    confidence: 0.92
+    enabled: true
+    owasp_id: LLM01
+
+  - name: hidden_instruction
+    layer: 1
+    type: keyword
+    keywords:
+      - "hidden instruction"
+      - "secret instruction"
+      - "silent command"
+      - "invisible action"
+    threat_type: PROMPT_INJECTION
+    confidence: 0.88
+    enabled: true
+    owasp_id: LLM01
+
+  # ── LLM06: Sensitive Disclosure (output layer) ──────────────────────────────
+
+  - name: aws_access_key
+    layer: 3
+    type: regex
+    pattern: "\\b(AKIA|ASIA|AROA)[A-Z0-9]{16}\\b"
+    threat_type: SENSITIVE_DISCLOSURE
+    confidence: 0.99
+    enabled: true
+    owasp_id: LLM06
+
+  - name: private_key_pem
+    layer: 3
+    type: regex
+    pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE KEY-----"
+    threat_type: SENSITIVE_DISCLOSURE
+    confidence: 0.99
+    enabled: true
+    owasp_id: LLM06
+
+  - name: password_in_output
+    layer: 3
+    type: regex
+    pattern: "\"?(password|passwd|pwd|secret|api[_\\-]?key|auth[_\\-]?token)\"?\\s*[=:]\\s*[\"']?[^\\s\"',]{6,}"
+    threat_type: SENSITIVE_DISCLOSURE
+    confidence: 0.90
+    enabled: true
+    owasp_id: LLM06
+
+  # ── LLM07: Insecure Plugin / Dangerous Args (param layer) ──────────────────
+
+  - name: sql_drop
+    layer: 2
+    type: regex
+    pattern: "\\b(drop|truncate)\\s+(table|database|schema)\\b"
+    threat_type: PLUGIN_INJECTION
+    confidence: 0.97
+    enabled: true
+    owasp_id: LLM07
+
+  - name: path_traversal
+    layer: 2
+    type: regex
+    pattern: "\\.\\.[/\\\\]{1,2}(etc|proc|sys|windows)"
+    threat_type: PLUGIN_INJECTION
+    confidence: 0.95
+    enabled: true
+    owasp_id: LLM07
+
+  - name: ssrf_internal
+    layer: 2
+    type: regex
+    pattern: "https?://(localhost|127\\.|10\\.|192\\.168\\.|172\\.(1[6-9]|2\\d|3[01])\\.)"
+    threat_type: PLUGIN_INJECTION
+    confidence: 0.93
+    enabled: true
+    owasp_id: LLM07
+
+  # ── LLM08: Excessive Agency ─────────────────────────────────────────────────
+
+  - name: dangerous_action_drop
+    layer: 1
+    type: regex
+    pattern: "\\b(drop|truncate|delete)\\s+(table|database|schema|collection)\\b"
+    threat_type: EXCESSIVE_AGENCY
+    confidence: 0.95
+    enabled: true
+    owasp_id: LLM08
+
+  - name: shell_execution
+    layer: 2
+    type: regex
+    pattern: "[;&|`]\\s*(rm\\s+-rf|dd\\s+if=|mkfs|:\\(\\)\\{|fork\\s*bomb)"
+    threat_type: EXCESSIVE_AGENCY
+    confidence: 0.97
+    enabled: true
+    owasp_id: LLM08

@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 import structlog
 
+from app.core.policy_engine import get_policy_engine
 from app.detection.patterns import detect_dangerous_args
 from app.models.schemas import ParamValidationResult
 
@@ -104,17 +105,22 @@ class ParamLayer:
 
         errors = _validate_object(params, input_schema)
 
-        # LLM08: Dangerous action detection — scan all string argument values
-        # for SQL injection, shell commands, path traversal, SSRF, etc.
+        # LLM07/08: Dangerous argument detection
         import json as _json
         flat_args = _json.dumps(params, default=str)
+
         danger = detect_dangerous_args(flat_args)
         if danger:
-            errors.append(
-                f"dangerous_arg:{danger['pattern']}:{danger['match'][:60]}"
-            )
+            errors.append(f"dangerous_arg:{danger['pattern']}:{danger['match'][:60]}")
             log.warning("dangerous_arg_detected", tool=tool_name,
                         pattern=danger["pattern"])
+
+        # Policy-engine rules (YAML-driven, layer 2)
+        if not danger:
+            engine = get_policy_engine()
+            for hit in engine.scan(flat_args, layer=2):
+                errors.append(f"policy:{hit.name}:{hit.match[:60]}")
+                log.warning("policy_param_hit", tool=tool_name, rule=hit.name)
 
         result = ParamValidationResult(
             tool_name=tool_name,

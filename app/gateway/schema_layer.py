@@ -18,6 +18,7 @@ from typing import Any, Awaitable, Callable, Optional
 import structlog
 
 from app.config import settings
+from app.core.policy_engine import get_policy_engine
 from app.detection.patterns import detect_injection
 from app.models.schemas import SchemaValidationResult, ThreatDetail
 
@@ -71,18 +72,34 @@ class SchemaLayer:
         """Scan every tool's name+description for injection. Returns (threats, clean)."""
         threats: list[ThreatDetail] = []
         clean: list[dict] = []
+        engine = get_policy_engine()
         for tool in tools:
             name = str(tool.get("name", "")) if isinstance(tool, dict) else ""
             desc = str(tool.get("description", "")) if isinstance(tool, dict) else ""
-            hit = detect_injection(f"{name} {desc}")
+            text = f"{name} {desc}"
+
+            # Built-in patterns first
+            hit = detect_injection(text)
             if hit:
                 threats.append(ThreatDetail(
                     tool=name, threat_type="TOOL_POISONING",
                     pattern=hit["pattern"], match=hit["match"],
                     confidence=hit["confidence"],
                 ))
-            else:
-                clean.append(tool)
+                continue
+
+            # Policy-engine rules (YAML-driven, hot-reloadable)
+            policy_hits = engine.scan(text, layer=1)
+            if policy_hits:
+                h = policy_hits[0]
+                threats.append(ThreatDetail(
+                    tool=name, threat_type=h.threat_type,
+                    pattern=h.name, match=h.match,
+                    confidence=h.confidence,
+                ))
+                continue
+
+            clean.append(tool)
         return threats, clean
 
     async def _store(self, server_url: str, new_hash: str,

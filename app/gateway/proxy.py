@@ -12,7 +12,6 @@ Usage:
 """
 from __future__ import annotations
 
-import asyncio
 import time
 import uuid
 from typing import Any, Optional
@@ -198,9 +197,26 @@ class MCPProxy:
 
         output_text = self._extract_output_text(upstream)
         if output_text:
-            asyncio.create_task(
-                inspect_output(session_id, tool_name, output_text, self._cb)
+            # L3 is now synchronous — scan and redact BEFORE returning to agent.
+            t_l3 = time.perf_counter()
+            l3_result, safe_text = await inspect_output(
+                session_id, tool_name, output_text, self._cb
             )
+            l3_ms = round((time.perf_counter() - t_l3) * 1000, 2)
+            timing["l3_ms"] = l3_ms
+
+            if not l3_result.passed:
+                # Rebuild the response with redacted content.
+                upstream = self._replace_output_text(upstream, safe_text)
+                timing["l3_redacted"] = True
+                timing["l3_threats"] = len(l3_result.threats)
+                log.warning("proxy_output_redacted", tool=tool_name,
+                            session=session_id, threats=len(l3_result.threats))
+                # Also expose threat detail for audit log in proxy_router
+                timing["threats_detail"] = [
+                    {**t.model_dump(), "layer": 3}
+                    for t in l3_result.threats
+                ]
 
         timing["verdict"] = "PASS"
         log.info("proxy_tools_call_forwarded",
@@ -228,6 +244,24 @@ class MCPProxy:
         except Exception as e:
             log.error("proxy_forward_error", error=str(e), target=target_url)
             return _jsonrpc_error(body.get("id"), -32300, f"Upstream unreachable: {e}")
+
+    def _replace_output_text(self, upstream: dict, safe_text: str) -> dict:
+        """Return a copy of the upstream response with content replaced by safe_text."""
+        import copy
+        result = copy.deepcopy(upstream)
+        content = result.get("result", {}).get("content", [])
+        if content:
+            # Replace all text blocks with the single redacted string
+            for block in content:
+                if block.get("type") == "text":
+                    block["text"] = safe_text
+                    break
+        else:
+            # Fallback: wrap redacted text in standard content structure
+            result.setdefault("result", {})["content"] = [
+                {"type": "text", "text": safe_text}
+            ]
+        return result
 
     def _extract_output_text(self, upstream: dict) -> Optional[str]:
         """Extract text content from a tools/call JSON-RPC response for L3 scan."""

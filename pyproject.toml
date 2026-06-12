@@ -16,6 +16,7 @@ dependencies = [
     "sqlalchemy[asyncio]",
     "asyncpg",
     "slowapi",
+    "pyyaml",
 ]
 
 [project.optional-dependencies]
