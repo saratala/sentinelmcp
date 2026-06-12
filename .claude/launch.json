@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin",
+      "runtimeExecutable": "/Users/sarat/Documents/Development/sentinelmcp/.venv/bin/python",
+      "runtimeArgs": ["admin/server.py"],
+      "port": 9000
+    }
+  ]
+}

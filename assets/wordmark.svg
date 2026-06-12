@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 80">
+  <path d="M32 4 L60 14 L60 38 C60 56 48 68 32 76 C16 68 4 56 4 38 L4 14 Z" fill="#14532d"/>
+  <path d="M32 10 L54 18 L54 38 C54 52 44 62 32 68 C20 62 10 52 10 38 L10 18 Z" fill="#16a34a"/>
+  <path d="M32 16 L48 22 L48 38 C48 48 40 56 32 62 C24 56 16 48 16 38 L16 22 Z" fill="#4ade80"/>
+  <text x="32" y="50" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="26" font-weight="700" fill="#052e16">S</text>
+  <text x="76" y="46" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="32" font-weight="400" fill="#16a34a">
+    <tspan font-weight="700" fill="#14532d">Sentinel</tspan>MCP
+  </text>
+  <text x="78" y="64" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="10.5" fill="#4ade80" letter-spacing="2.5">AI AGENT SECURITY GATEWAY</text>
+</svg>

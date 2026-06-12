@@ -6,6 +6,10 @@ x-app-env: &app-env
   SENTINEL_POSTGRES_URL: postgresql+asyncpg://sentinel:${SENTINEL_POSTGRES_PASSWORD:-sentinel}@postgres/sentinelmcp
   SENTINEL_API_KEY: ${SENTINEL_API_KEY:-dev-key-123}
   SENTINEL_OTEL_ENDPOINT: ${SENTINEL_OTEL_ENDPOINT:-}
+  SENTINEL_JWT_SECRET: ${SENTINEL_JWT_SECRET:-}
+  SENTINEL_JWT_ISSUER: ${SENTINEL_JWT_ISSUER:-}
+  SENTINEL_JWT_AUDIENCE: ${SENTINEL_JWT_AUDIENCE:-}
+  SENTINEL_JWKS_URL: ${SENTINEL_JWKS_URL:-}
 
 services:
 
@@ -36,7 +40,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sentinel"]
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinelmcp"]
       interval: 5s
       timeout: 3s
       retries: 5

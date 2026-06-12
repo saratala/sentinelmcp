@@ -37,7 +37,7 @@ export interface ThreatEvent {
   layer: number;
   pattern: string;
   blocked: boolean;
-  created_at: string;
+  timestamp: string;
 }
 
 export interface ThreatsResponse {
@@ -98,7 +98,7 @@ export async function getHealth(config: SentinelConfig): Promise<HealthResponse>
 
 export async function getThreatsStats(config: SentinelConfig): Promise<{
   by_type: Record<string, number>;
-  total_blocked: number;
+  total: number;
 }> {
   return apiFetch(config, '/gateway/threats/stats');
 }

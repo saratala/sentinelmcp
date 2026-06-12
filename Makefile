@@ -40,7 +40,10 @@ stats:  ## Show threat statistics
 	  -H "X-Sentinel-Key: $${SENTINEL_API_KEY:-dev-key-123}" | python3 -m json.tool
 
 extension:  ## Build VS Code extension
-	cd extension && npm install && npm run compile
+	cd extension && export PATH="/opt/homebrew/bin:$$PATH" && npm install && npm run compile
+
+extension-package:  ## Build and package VS Code extension as .vsix
+	cd extension && export PATH="/opt/homebrew/bin:$$PATH" && npx vsce package
 
 health:  ## Check gateway health
 	@curl -s http://localhost:8888/health | python3 -m json.tool
@@ -54,6 +57,9 @@ register-rest:  ## Register a REST adapter (BASE_URL= OPENAPI_URL= NAME=)
 
 attacks:  ## List available probe attack types
 	@curl -s http://localhost:8888/probe/attacks | python3 -m json.tool
+
+admin:  ## Start the Admin UI at http://localhost:9000
+	.venv/bin/python admin/server.py
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
