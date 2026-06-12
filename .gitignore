@@ -16,3 +16,8 @@ htmlcov/
 sentinelmcp_90day_plan.jsx
 sentinelmcp_investor_brief.md
 sentinelmcp_validation_arch.jsx
+
+# VS Code extension build artifacts
+extension/node_modules/
+extension/out/
+extension/*.vsix
