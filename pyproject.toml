@@ -17,6 +17,12 @@ dependencies = [
     "asyncpg",
     "slowapi",
     "pyyaml",
+    "python-jose[cryptography]",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-instrumentation-fastapi",
+    "opentelemetry-instrumentation-redis",
+    "opentelemetry-exporter-otlp-proto-grpc",
 ]
 
 [project.optional-dependencies]
@@ -43,4 +49,4 @@ testpaths = ["tests"]
 addopts = "-v"
 
 [tool.setuptools.packages.find]
-include = ["app*", "worker*"]
+include = ["app*", "worker*", "sentinelmcp_sdk*"]

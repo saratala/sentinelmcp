@@ -1,0 +1,86 @@
+{
+  "name": "sentinelmcp",
+  "displayName": "SentinelMCP — AI Agent Security",
+  "description": "Real-time security monitoring for MCP tool calls. Detects prompt injection, PII leaks, rug-pull attacks, and supply chain threats.",
+  "version": "0.1.0",
+  "publisher": "sentinelmcp",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other", "Linters"],
+  "keywords": ["mcp", "security", "ai", "llm", "owasp", "claude", "copilot"],
+  "icon": "images/icon.png",
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sentinelmcp.analyze",
+        "title": "SentinelMCP: Analyze MCP Servers",
+        "category": "SentinelMCP"
+      },
+      {
+        "command": "sentinelmcp.showReport",
+        "title": "SentinelMCP: Show Compliance Report",
+        "category": "SentinelMCP"
+      },
+      {
+        "command": "sentinelmcp.probe",
+        "title": "SentinelMCP: Run Security Probe",
+        "category": "SentinelMCP"
+      },
+      {
+        "command": "sentinelmcp.openDashboard",
+        "title": "SentinelMCP: Open Dashboard",
+        "category": "SentinelMCP"
+      },
+      {
+        "command": "sentinelmcp.showThreats",
+        "title": "SentinelMCP: Show Recent Threats",
+        "category": "SentinelMCP"
+      }
+    ],
+    "configuration": {
+      "title": "SentinelMCP",
+      "properties": {
+        "sentinelmcp.gatewayUrl": {
+          "type": "string",
+          "default": "http://localhost:8888",
+          "description": "SentinelMCP gateway base URL"
+        },
+        "sentinelmcp.apiKey": {
+          "type": "string",
+          "default": "dev-key-123",
+          "description": "SentinelMCP API key (X-Sentinel-Key)"
+        },
+        "sentinelmcp.autoAnalyze": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically analyze MCP config files on change"
+        },
+        "sentinelmcp.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show threat count in status bar"
+        },
+        "sentinelmcp.pollIntervalSecs": {
+          "type": "number",
+          "default": 30,
+          "description": "Status bar refresh interval in seconds"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  }
+}
