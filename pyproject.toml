@@ -11,6 +11,7 @@ dependencies = [
     "pydantic-settings",
     "structlog",
     "scikit-learn",
+    "anthropic>=0.40.0",
     "celery[redis]",
     "httpx",
     "sqlalchemy[asyncio]",

@@ -15,7 +15,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.core.circuit_breaker import CircuitBreaker
-from app.core.database import close_engine, create_tables
+from app.core.database import close_engine, close_read_engine, create_tables
 from app.core.rate_limit import limiter
 from app.core.redis import close_redis, get_redis
 from app.gateway.context_layer import ContextLayer
@@ -41,7 +41,14 @@ async def lifespan(app: FastAPI):
     redis = get_redis()
 
     app.state.schema_layer = SchemaLayer(redis)
-    app.state.context_layer = ContextLayer(redis)
+    app.state.context_layer = ContextLayer(
+        redis,
+        llm_analysis_enabled=settings.llm_analysis_enabled,
+        anthropic_api_key=settings.anthropic_api_key,
+        llm_analysis_model=settings.llm_analysis_model,
+        llm_grey_zone_min=settings.llm_grey_zone_min,
+        llm_grey_zone_max=settings.llm_grey_zone_max,
+    )
     app.state.circuit_breaker = CircuitBreaker(redis)
     app.state.redis = redis
 
@@ -60,6 +67,7 @@ async def lifespan(app: FastAPI):
     await revalidator.stop()
     await close_redis()
     await close_engine()
+    await close_read_engine()
     log.info("sentinelmcp_stopped")
 
 
