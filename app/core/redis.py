@@ -14,11 +14,10 @@ def get_redis() -> redis.Redis:
     """Return the shared async Redis client, creating the pool on first use."""
     global _client
     if _client is None:
-        _client = redis.from_url(
-            settings.redis_url,
-            encoding="utf-8",
-            decode_responses=True,
-        )
+        kwargs: dict = {"encoding": "utf-8", "decode_responses": True}
+        if settings.redis_password:
+            kwargs["password"] = settings.redis_password
+        _client = redis.from_url(settings.redis_url, **kwargs)
     return _client
 
 

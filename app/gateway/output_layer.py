@@ -1,12 +1,13 @@
-"""Layer 3 — async output inspection (never blocks the response path).
+"""Layer 3 — synchronous output inspection (blocks the response path).
 
-The agent receives the tool response immediately. A copy is handed to
-``inspect_output`` which runs the scan and trips the circuit breaker if a
-threat is found. The next call from this session will be blocked.
+Every tool response is scanned BEFORE being returned to the agent.
+If a threat is found, the response is redacted and the session circuit
+breaker is tripped. The agent receives a safe, sanitised response — never
+the raw PII or injected payload.
 
-In production this is dispatched as a Celery task. In this module we expose
-the core inspection logic so it can be called directly (e.g. from the Celery
-task or from tests) without pulling in the Celery machinery.
+Redaction rules:
+  PII patterns  → [REDACTED:pii_credit_card], [REDACTED:pii_ssn], etc.
+  Injection     → [BLOCKED:output_injection] replaces the matched phrase
 """
 from __future__ import annotations
 
@@ -59,6 +60,26 @@ _OUTPUT_PATTERNS: list[tuple[str, "re.Pattern[str]"]] = [
 MAX_OUTPUT_BYTES = 1_048_576  # 1 MB — truncate before scanning
 
 
+def redact_output(text: str) -> tuple[str, list[ThreatDetail]]:
+    """Scan and redact threats from output text.
+
+    Returns (redacted_text, threats). The redacted text is safe to return
+    to the agent — all PII and injection payloads are replaced with tags.
+    """
+    threats = _scan_output(text)
+    if not threats:
+        return text, []
+
+    redacted = text
+    from app.detection.patterns import PII_PATTERNS
+    for name, pattern in PII_PATTERNS:
+        redacted = pattern.sub(f"[REDACTED:{name}]", redacted)
+    for name, pattern in _OUTPUT_PATTERNS:
+        redacted = pattern.sub("[BLOCKED:output_injection]", redacted)
+
+    return redacted, threats
+
+
 def _scan_output(text: str) -> list[ThreatDetail]:
     """Scan output text for injection + PII patterns. Returns a list of threats."""
     threats: list[ThreatDetail] = []
@@ -94,15 +115,15 @@ async def inspect_output(
     tool_name: str,
     output: Any,
     circuit_breaker: CircuitBreaker,
-) -> OutputInspectionResult:
-    """Inspect tool output and trip the circuit breaker if a threat is found.
+) -> tuple[OutputInspectionResult, str]:
+    """Inspect and redact tool output synchronously on the response path.
 
-    This is the hot function called by the Celery task. It must never be
-    awaited on the response path — always dispatch asynchronously.
+    Returns (result, safe_output). safe_output has all PII and injection
+    payloads replaced with redaction tags — always return this to the agent,
+    never the raw output when threats are present.
     """
     t0 = time.perf_counter()
 
-    # Coerce output to a string for pattern matching.
     if isinstance(output, str):
         text = output
     else:
@@ -112,19 +133,19 @@ async def inspect_output(
         except Exception:
             text = str(output)
 
-    # Truncate to prevent runaway scan time on huge payloads.
     if len(text.encode("utf-8")) > MAX_OUTPUT_BYTES:
         text = text[:MAX_OUTPUT_BYTES]
 
-    threats = _scan_output(text)
+    redacted_text, threats = redact_output(text)
 
     if threats:
-        reason = f"OUTPUT_INJECTION:{tool_name}:{threats[0].pattern}"
+        reason = f"L3:{tool_name}:{threats[0].pattern}"
         await circuit_breaker.trip(session_id, reason)
         log.warning(
-            "output_injection_detected",
+            "output_threat_redacted",
             session=session_id, tool=tool_name,
             threats=[t.model_dump() for t in threats],
+            redacted=redacted_text != text,
         )
 
     result = OutputInspectionResult(
@@ -135,4 +156,4 @@ async def inspect_output(
         circuit_tripped=bool(threats),
         latency_ms=round((time.perf_counter() - t0) * 1000, 3),
     )
-    return result
+    return result, redacted_text

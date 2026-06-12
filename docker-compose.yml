@@ -1,8 +1,9 @@
 x-app-env: &app-env
   SENTINEL_REDIS_URL: redis://redis:6379/0
-  SENTINEL_CELERY_BROKER_URL: redis://redis:6379/1
-  SENTINEL_CELERY_RESULT_BACKEND: redis://redis:6379/1
-  SENTINEL_POSTGRES_URL: postgresql+asyncpg://sentinel:sentinel@postgres/sentinelmcp
+  SENTINEL_REDIS_PASSWORD: ${SENTINEL_REDIS_PASSWORD:-sentinelredis}
+  SENTINEL_CELERY_BROKER_URL: redis://:${SENTINEL_REDIS_PASSWORD:-sentinelredis}@redis:6379/1
+  SENTINEL_CELERY_RESULT_BACKEND: redis://:${SENTINEL_REDIS_PASSWORD:-sentinelredis}@redis:6379/1
+  SENTINEL_POSTGRES_URL: postgresql+asyncpg://sentinel:${SENTINEL_POSTGRES_PASSWORD:-sentinel}@postgres/sentinelmcp
   SENTINEL_API_KEY: ${SENTINEL_API_KEY:-dev-key-123}
 
 services:
@@ -11,10 +12,14 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: >
+      redis-server
+      --requirepass ${SENTINEL_REDIS_PASSWORD:-sentinelredis}
+      --bind 0.0.0.0
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${SENTINEL_REDIS_PASSWORD:-sentinelredis}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -23,10 +28,10 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: sentinel
-      POSTGRES_PASSWORD: sentinel
+      POSTGRES_PASSWORD: ${SENTINEL_POSTGRES_PASSWORD:-sentinel}
       POSTGRES_DB: sentinelmcp
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
