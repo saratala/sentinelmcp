@@ -9,12 +9,32 @@ from __future__ import annotations
 import hashlib
 import secrets
 import time
+from dataclasses import dataclass
+from typing import Optional
 
 import structlog
 from fastapi import Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 
 from app.config import settings
+
+
+@dataclass
+class AuthContext:
+    """Carries the authenticated identity for a single request.
+
+    ``key`` holds the raw API key (or the JWT ``tenant_id`` string for Bearer
+    requests — kept for backwards compatibility with code that used the old
+    ``str`` return value).
+
+    ``tenant_id`` is ``None`` for plain API-key requests where no tenant is
+    known (single-tenant / dev setups) and is the JWT ``sub`` / ``tenant_id``
+    claim for Bearer JWT requests.  Query code should only filter by
+    ``tenant_id`` when it is not ``None``.
+    """
+
+    key: str
+    tenant_id: Optional[str] = None
 
 log = structlog.get_logger(__name__)
 
@@ -90,25 +110,28 @@ async def verify_jwt(token: str) -> str:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="JWT missing tenant_id and sub claims",
         )
-    return tenant_id
+    return tenant_id  # raw string — caller wraps in AuthContext
 
 
 async def require_api_key(
     request: Request,
     x_sentinel_key: str = Header(None, alias="X-Sentinel-Key"),
-) -> str:
+) -> AuthContext:
     """FastAPI dependency — validates the X-Sentinel-Key header.
 
     Falls back to Bearer JWT authentication if X-Sentinel-Key is absent.
-    Returns the raw API key or JWT tenant_id on success so downstream code
-    can use it as a session/tenant identifier if needed.
+    Returns an :class:`AuthContext` on success.  ``AuthContext.tenant_id`` is
+    set to the JWT ``tenant_id`` / ``sub`` claim for Bearer requests and is
+    ``None`` for plain API-key requests (backwards-compatible single-tenant
+    behaviour — callers must only filter by tenant when it is not ``None``).
     """
     # --- Bearer JWT path ---
     if not x_sentinel_key:
         authorization: str = request.headers.get("Authorization", "")
         if authorization.startswith("Bearer "):
             token = authorization[len("Bearer "):]
-            return await verify_jwt(token)
+            tenant_id = await verify_jwt(token)
+            return AuthContext(key=tenant_id, tenant_id=tenant_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="X-Sentinel-Key header or Bearer token is required",
@@ -118,15 +141,26 @@ async def require_api_key(
     key_hash = _hash_key(x_sentinel_key)
 
     # Check Redis key store first (production path).
+    # The value stored by provision_key is a plain label string.  If the value
+    # is a JSON object with a "tenant_id" field we extract it; otherwise
+    # tenant_id stays None (single-tenant / legacy keys).
     redis = getattr(request.app.state, "redis", None)
     if redis is not None:
         stored = await redis.get(f"apikey:{key_hash}")
         if stored:
-            return x_sentinel_key
+            tenant_id: Optional[str] = None
+            try:
+                import json as _json
+                meta = _json.loads(stored)
+                if isinstance(meta, dict):
+                    tenant_id = meta.get("tenant_id") or None
+            except (ValueError, TypeError):
+                pass  # plain label string — no tenant
+            return AuthContext(key=x_sentinel_key, tenant_id=tenant_id)
 
     # Fall back to the env-var dev key.
     if _DEV_KEY_HASH and secrets.compare_digest(key_hash, _DEV_KEY_HASH):
-        return x_sentinel_key
+        return AuthContext(key=x_sentinel_key, tenant_id=None)
 
     log.warning("invalid_api_key", key_prefix=x_sentinel_key[:8] + "...")
     raise HTTPException(

@@ -25,6 +25,7 @@ async def log_threat(
     session_id: Optional[str] = None,
     rug_pull: bool = False,
     raw_payload: dict | None = None,
+    tenant_id: Optional[str] = None,
 ) -> ThreatEvent:
     """Persist one threat event to the database and return the row."""
     event = ThreatEvent(
@@ -40,6 +41,7 @@ async def log_threat(
         blocked=True,
         rug_pull=rug_pull,
         raw_payload=raw_payload or {},
+        tenant_id=tenant_id,
     )
     session.add(event)
     await session.flush()
