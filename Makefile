@@ -1,4 +1,4 @@
-.PHONY: install test dev demo observe mcp-server agent probe report extension help
+.PHONY: install test dev demo observe mcp-server agent probe report extension ha help
 
 install:  ## Install all dependencies (main + dev + demo extras)
 	.venv/bin/pip install -e ".[test,demo]"
@@ -45,6 +45,9 @@ extension:  ## Build VS Code extension
 extension-package:  ## Build and package VS Code extension as .vsix
 	cd extension && export PATH="/opt/homebrew/bin:$$PATH" && npx vsce package
 
+extension-publish:  ## Publish VS Code extension to Marketplace (requires VSCE_PAT env var)
+	cd extension && export PATH="/opt/homebrew/bin:$$PATH" && VSCE_PAT=$${VSCE_PAT} npx vsce publish
+
 health:  ## Check gateway health
 	@curl -s http://localhost:8888/health | python3 -m json.tool
 
@@ -60,6 +63,9 @@ attacks:  ## List available probe attack types
 
 admin:  ## Start the Admin UI at http://localhost:9000
 	.venv/bin/python admin/server.py
+
+ha:  ## Start full HA stack (Redis Sentinel + Postgres replica)
+	docker compose --profile ha up -d
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \

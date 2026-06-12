@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.core.alerts import fire_alert
 from app.core.auth import AuthContext, require_api_key
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.rate_limit import limiter
 from app.core.threat_log import get_recent_threats, log_threat
 from app.deps import get_circuit_breaker, get_context_layer, get_schema_layer
@@ -170,7 +170,7 @@ async def get_threats(
         except ValueError:
             raise HTTPException(status_code=400, detail="since must be ISO-8601")
 
-    async for db in get_db():
+    async for db in get_read_db():
         q = select(ThreatEvent).order_by(desc(ThreatEvent.timestamp))
         if _auth.tenant_id is not None:
             q = q.where(ThreatEvent.tenant_id == _auth.tenant_id)
@@ -222,7 +222,7 @@ async def get_threat_stats(
     from app.models.db import ThreatEvent
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    async for db in get_db():
+    async for db in get_read_db():
         # Build a reusable base filter so tenant isolation is applied uniformly.
         from sqlalchemy import and_
         base_filter = [ThreatEvent.timestamp >= cutoff]
@@ -280,7 +280,7 @@ async def export_threats_csv(
     from app.models.db import ThreatEvent
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    async for db in get_db():
+    async for db in get_read_db():
         q = (select(ThreatEvent)
              .where(ThreatEvent.timestamp >= cutoff)
              .order_by(desc(ThreatEvent.timestamp)))
@@ -326,7 +326,7 @@ async def compliance_report(
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     generated_at = datetime.now(timezone.utc).isoformat()
 
-    async for db in get_db():
+    async for db in get_read_db():
         # Reusable base filter for tenant isolation.
         from sqlalchemy import and_
         base_filter = [ThreatEvent.timestamp >= cutoff]

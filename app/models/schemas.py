@@ -79,6 +79,7 @@ class ContextRiskResult(BaseModel):
     risk_score: float = 0.0
     alerted: bool = False
     latency_ms: float = 0.0
+    llm_analysis: Optional[dict] = None
 
 
 # ── Orchestrated invocation result ───────────────────────────────────────────

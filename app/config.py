@@ -1,6 +1,7 @@
 """Application settings sourced from environment variables (pydantic-settings)."""
 from __future__ import annotations
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,6 +50,21 @@ class Settings(BaseSettings):
     jwt_audience: str = ""           # SENTINEL_JWT_AUDIENCE
     jwt_secret: str = ""             # SENTINEL_JWT_SECRET (HS256 shared secret)
     jwks_url: str = ""               # SENTINEL_JWKS_URL (RS256 JWKS endpoint)
+
+    # Redis Sentinel (HA mode) — set SENTINEL_REDIS_SENTINEL_URLS to enable
+    redis_sentinel_urls: str = ""    # comma-separated host:port, e.g. "sentinel-1:26379,sentinel-2:26380"
+    redis_sentinel_master: str = "mymaster"  # Sentinel master name
+
+    # PostgreSQL read replica (HA mode) — set SENTINEL_POSTGRES_REPLICA_URL to enable
+    postgres_replica_url: str = ""   # e.g. postgresql+asyncpg://sentinel:pass@postgres-replica:5432/sentinelmcp
+
+    # Layer 4 — LLM-based semantic analysis for grey-zone risk scores
+    llm_analysis_enabled: bool = True          # SENTINEL_LLM_ANALYSIS_ENABLED
+    # ANTHROPIC_API_KEY uses the standard key name (no SENTINEL_ prefix)
+    anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
+    llm_analysis_model: str = "claude-haiku-4-5-20251001"  # SENTINEL_LLM_ANALYSIS_MODEL
+    llm_grey_zone_min: float = 0.35            # SENTINEL_LLM_GREY_ZONE_MIN
+    llm_grey_zone_max: float = 0.75            # SENTINEL_LLM_GREY_ZONE_MAX
 
 
 def get_settings() -> Settings:

@@ -2,7 +2,7 @@
   "name": "sentinelmcp",
   "displayName": "SentinelMCP — AI Agent Security",
   "description": "Real-time security monitoring for MCP tool calls. Detects prompt injection, PII leaks, rug-pull attacks, and supply chain threats.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "sentinelmcp",
   "engines": {
     "vscode": "^1.85.0"
@@ -14,6 +14,18 @@
     "url": "https://github.com/saratala/sentinelmcp"
   },
   "license": "MIT",
+  "badges": [
+    {
+      "url": "https://img.shields.io/badge/security-OWASP%20LLM%20Top%2010-green",
+      "href": "https://owasp.org/www-project-top-10-for-large-language-model-applications/",
+      "description": "OWASP LLM Top 10"
+    }
+  ],
+  "galleryBanner": {
+    "color": "#14532d",
+    "theme": "dark"
+  },
+  "pricing": "Free",
   "icon": "images/icon.png",
   "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",

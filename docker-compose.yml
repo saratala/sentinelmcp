@@ -10,6 +10,11 @@ x-app-env: &app-env
   SENTINEL_JWT_ISSUER: ${SENTINEL_JWT_ISSUER:-}
   SENTINEL_JWT_AUDIENCE: ${SENTINEL_JWT_AUDIENCE:-}
   SENTINEL_JWKS_URL: ${SENTINEL_JWKS_URL:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  SENTINEL_LLM_ANALYSIS_ENABLED: ${SENTINEL_LLM_ANALYSIS_ENABLED:-true}
+  # HA mode — empty by default; overridden when running with --profile ha
+  SENTINEL_REDIS_SENTINEL_URLS: "${SENTINEL_REDIS_SENTINEL_URLS:-}"
+  SENTINEL_POSTGRES_REPLICA_URL: "${SENTINEL_POSTGRES_REPLICA_URL:-}"
 
 services:
 
@@ -159,6 +164,117 @@ services:
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     profiles: ["observability"]
+
+  # ── High-Availability: Redis Sentinel + Postgres read replica ──────────────
+  # Start with: docker compose --profile ha up -d   (or: make ha)
+
+  redis-master:
+    image: redis:7-alpine
+    command: >
+      redis-server
+      --requirepass ${SENTINEL_REDIS_PASSWORD:-sentinelredis}
+      --bind 0.0.0.0
+    profiles: ["ha"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${SENTINEL_REDIS_PASSWORD:-sentinelredis}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-replica:
+    image: redis:7-alpine
+    command: >
+      redis-server
+      --replicaof redis-master 6379
+      --requirepass ${SENTINEL_REDIS_PASSWORD:-sentinelredis}
+      --masterauth ${SENTINEL_REDIS_PASSWORD:-sentinelredis}
+      --bind 0.0.0.0
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    profiles: ["ha"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${SENTINEL_REDIS_PASSWORD:-sentinelredis}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel-1:
+    image: redis:7-alpine
+    command: >
+      sh -c "
+        echo 'sentinel monitor mymaster redis-master 6379 2' > /etc/sentinel.conf &&
+        echo 'sentinel auth-pass mymaster ${SENTINEL_REDIS_PASSWORD:-sentinelredis}' >> /etc/sentinel.conf &&
+        echo 'sentinel down-after-milliseconds mymaster 5000' >> /etc/sentinel.conf &&
+        echo 'sentinel failover-timeout mymaster 10000' >> /etc/sentinel.conf &&
+        echo 'sentinel parallel-syncs mymaster 1' >> /etc/sentinel.conf &&
+        redis-sentinel /etc/sentinel.conf
+      "
+    ports:
+      - "127.0.0.1:26379:26379"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    profiles: ["ha"]
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    command: >
+      sh -c "
+        echo 'sentinel monitor mymaster redis-master 6379 2' > /etc/sentinel.conf &&
+        echo 'sentinel auth-pass mymaster ${SENTINEL_REDIS_PASSWORD:-sentinelredis}' >> /etc/sentinel.conf &&
+        echo 'sentinel down-after-milliseconds mymaster 5000' >> /etc/sentinel.conf &&
+        echo 'sentinel failover-timeout mymaster 10000' >> /etc/sentinel.conf &&
+        echo 'sentinel parallel-syncs mymaster 1' >> /etc/sentinel.conf &&
+        redis-sentinel /etc/sentinel.conf
+      "
+    ports:
+      - "127.0.0.1:26380:26379"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    profiles: ["ha"]
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    command: >
+      sh -c "
+        echo 'sentinel monitor mymaster redis-master 6379 2' > /etc/sentinel.conf &&
+        echo 'sentinel auth-pass mymaster ${SENTINEL_REDIS_PASSWORD:-sentinelredis}' >> /etc/sentinel.conf &&
+        echo 'sentinel down-after-milliseconds mymaster 5000' >> /etc/sentinel.conf &&
+        echo 'sentinel failover-timeout mymaster 10000' >> /etc/sentinel.conf &&
+        echo 'sentinel parallel-syncs mymaster 1' >> /etc/sentinel.conf &&
+        redis-sentinel /etc/sentinel.conf
+      "
+    ports:
+      - "127.0.0.1:26381:26379"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    profiles: ["ha"]
+
+  postgres-replica:
+    image: bitnami/postgresql:16
+    environment:
+      POSTGRESQL_REPLICATION_MODE: slave
+      POSTGRESQL_MASTER_HOST: postgres
+      POSTGRESQL_MASTER_PORT_NUMBER: 5432
+      POSTGRESQL_REPLICATION_USER: replicator
+      POSTGRESQL_REPLICATION_PASSWORD: ${SENTINEL_POSTGRES_REPLICATION_PASSWORD:-replicapass}
+      POSTGRESQL_PASSWORD: ${SENTINEL_POSTGRES_PASSWORD:-sentinel}
+      POSTGRESQL_USERNAME: sentinel
+      POSTGRESQL_DATABASE: sentinelmcp
+    ports:
+      - "127.0.0.1:5433:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["ha"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinelmcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres_data:
