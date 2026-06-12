@@ -51,7 +51,7 @@ async function updateStatusBar(): Promise<void> {
 
   try {
     const stats = await getThreatsStats(getConfig());
-    const blocked = stats.total_blocked ?? 0;
+    const blocked = stats.total ?? 0;
     lastThreatCount = blocked;
 
     if (blocked === 0) {
@@ -257,7 +257,7 @@ async function cmdShowThreats(): Promise<void> {
     outputChannel.appendLine(`\n[SentinelMCP] Recent threats (last 7 days): ${result.total}`);
     for (const t of result.threats.slice(0, 20)) {
       outputChannel.appendLine(
-        `  [${t.created_at.slice(0, 16)}] ${t.threat_type} | ${t.tool_name} | L${t.layer} | ${t.blocked ? 'BLOCKED' : 'FLAGGED'}`
+        `  [${t.timestamp.slice(0, 16)}] ${t.threat_type} | ${t.tool_name} | L${t.layer} | ${t.blocked ? 'BLOCKED' : 'FLAGGED'}`
       );
     }
     if (result.total > 20) {

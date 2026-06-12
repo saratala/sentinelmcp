@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SentinelMCP Admin</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --bg2: #1a1d27; --bg3: #22263a;
+    --border: rgba(255,255,255,.08); --border2: rgba(255,255,255,.15);
+    --text: #e8eaf0; --muted: #7b8099; --accent: #5b7fff;
+    --green: #3dd68c; --red: #ff5c5c; --amber: #f5a623; --purple: #a78bfa;
+    --teal: #2dd4bf; --pink: #f472b6;
+    --radius: 8px; --radius-lg: 12px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.6; min-height: 100vh; }
+
+  /* Nav */
+  nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; gap: 32px; height: 52px; position: sticky; top: 0; z-index: 100; }
+  .nav-logo { font-size: 15px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 10px; text-decoration: none; }
+  .nav-logo-icon { width: 28px; height: 28px; flex-shrink: 0; }
+  .nav-logo span { color: var(--accent); }
+  .nav-tabs { display: flex; gap: 4px; }
+  .nav-tab { padding: 6px 14px; border-radius: var(--radius); cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 500; border: none; background: none; transition: all .15s; }
+  .nav-tab:hover { color: var(--text); background: var(--bg3); }
+  .nav-tab.active { color: var(--text); background: var(--bg3); }
+  .nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* Layout */
+  main { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* Page headers */
+  .page-header { margin-bottom: 24px; }
+  .page-header h1 { font-size: 20px; font-weight: 600; color: var(--text); }
+  .page-header p { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+  /* Cards */
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; }
+  .card-sm { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+
+  /* Grid */
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+  /* Service cards */
+  .service-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; transition: border-color .15s; }
+  .service-card:hover { border-color: var(--border2); }
+  .service-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+  .service-icon { width: 36px; height: 36px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+  .service-info { flex: 1; min-width: 0; }
+  .service-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .service-desc { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+  .service-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 20px; }
+  .badge-running { background: rgba(61,214,140,.15); color: var(--green); }
+  .badge-stopped { background: rgba(255,92,92,.15); color: var(--red); }
+  .badge-restarting { background: rgba(245,166,35,.15); color: var(--amber); }
+  .badge-healthy { background: rgba(61,214,140,.15); color: var(--green); }
+  .badge-port { background: var(--bg3); color: var(--muted); }
+  .badge-cat { background: var(--bg3); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+  .service-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: var(--radius); border: 1px solid var(--border2); background: var(--bg3); color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-start { border-color: rgba(61,214,140,.4); color: var(--green); }
+  .btn-start:hover { background: rgba(61,214,140,.1); }
+  .btn-stop { border-color: rgba(255,92,92,.4); color: var(--red); }
+  .btn-stop:hover { background: rgba(255,92,92,.1); }
+  .btn-build { border-color: rgba(91,127,255,.4); color: var(--accent); }
+  .btn-build:hover { background: rgba(91,127,255,.1); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #4a6fe8; border-color: #4a6fe8; color: #fff; }
+  .btn-sm { padding: 3px 10px; font-size: 11px; }
+  .btn-lg { padding: 8px 20px; font-size: 13px; }
+
+  /* Metric cards */
+  .metric-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; }
+  .metric-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+  .metric-value { font-size: 28px; font-weight: 700; color: var(--text); line-height: 1; }
+  .metric-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* Forms */
+  .form-group { margin-bottom: 14px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 500; }
+  input, select, textarea {
+    width: 100%; padding: 8px 12px; background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: var(--radius); color: var(--text); font-size: 13px; font-family: var(--font);
+    outline: none; transition: border-color .15s;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  input::placeholder { color: var(--muted); }
+  .checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
+  .checkbox-item { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); padding: 4px 10px; border-radius: 20px; cursor: pointer; font-size: 12px; color: var(--muted); transition: all .15s; }
+  .checkbox-item input[type=checkbox] { width: auto; accent-color: var(--accent); }
+  .checkbox-item:has(input:checked) { border-color: var(--accent); color: var(--accent); background: rgba(91,127,255,.08); }
+
+  /* Output / logs */
+  .output-box { background: #090b12; border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: #c9d1d9; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; min-height: 60px; }
+  .output-placeholder { color: var(--muted); font-style: italic; font-family: var(--font); }
+  .line-ok { color: var(--green); }
+  .line-err { color: var(--red); }
+  .line-warn { color: var(--amber); }
+  .line-info { color: var(--accent); }
+  .line-key { color: var(--purple); }
+
+  /* Result sections */
+  .result-panel { margin-top: 16px; display: none; }
+  .result-panel.show { display: block; }
+  .result-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .result-header h3 { font-size: 14px; font-weight: 600; }
+  .risk-badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+  .risk-SAFE { background: rgba(61,214,140,.15); color: var(--green); }
+  .risk-LOW { background: rgba(61,214,140,.1); color: var(--green); }
+  .risk-MEDIUM { background: rgba(245,166,35,.15); color: var(--amber); }
+  .risk-HIGH { background: rgba(255,92,92,.15); color: var(--red); }
+  .risk-CRITICAL { background: rgba(255,92,92,.2); color: var(--red); border: 1px solid rgba(255,92,92,.3); }
+
+  /* Findings table */
+  .findings-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+  .findings-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 10px 8px 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); }
+  .findings-table td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .verdict-VULNERABLE { color: var(--red); font-weight: 600; }
+  .verdict-PROTECTED { color: var(--green); }
+  .verdict-INCONCLUSIVE { color: var(--amber); }
+
+  /* Threat list */
+  .threat-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .threat-type { font-weight: 600; color: var(--red); min-width: 150px; }
+  .threat-tool { color: var(--muted); min-width: 120px; }
+  .threat-layer { background: var(--bg3); padding: 1px 6px; border-radius: 4px; font-size: 11px; color: var(--muted); }
+  .threat-time { color: var(--muted); margin-left: auto; font-size: 11px; }
+
+  /* Dashboard cards */
+  .dash-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .dash-card-header { display: flex; align-items: center; gap: 10px; }
+  .dash-icon { width: 40px; height: 40px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .dash-title { font-size: 14px; font-weight: 600; }
+  .dash-subtitle { font-size: 12px; color: var(--muted); }
+  .dash-url { display: flex; align-items: center; gap: 8px; background: var(--bg3); border-radius: var(--radius); padding: 8px 12px; font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .dash-url a { color: var(--accent); text-decoration: none; flex: 1; }
+  .dash-url a:hover { text-decoration: underline; }
+  .dash-creds { font-size: 12px; color: var(--muted); }
+  .dash-creds strong { color: var(--text); }
+  .dash-steps { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .dash-steps li { font-size: 12px; color: var(--muted); padding-left: 18px; position: relative; }
+  .dash-steps li::before { content: attr(data-n); position: absolute; left: 0; color: var(--accent); font-weight: 600; font-size: 11px; }
+  .dash-tag { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: .04em; }
+  .dash-tag-live { background: rgba(61,214,140,.15); color: var(--green); }
+  .dash-tag-stopped { background: rgba(255,92,92,.15); color: var(--red); }
+
+  /* Section sub-tabs */
+  .sub-tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; width: fit-content; }
+  .sub-tab { padding: 5px 14px; border-radius: 5px; cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 500; border: none; background: none; transition: all .15s; }
+  .sub-tab.active { background: var(--bg3); color: var(--text); }
+
+  /* Category filters */
+  .filter-bar { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
+  .filter-btn { padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg2); color: var(--muted); font-size: 12px; cursor: pointer; transition: all .15s; }
+  .filter-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(91,127,255,.08); }
+
+  /* Spinner */
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid transparent; border-top-color: currentColor; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Divider */
+  .divider { height: 1px; background: var(--border); margin: 20px 0; }
+
+  /* Toast */
+  #toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius); padding: 10px 16px; font-size: 13px; opacity: 0; transform: translateY(8px); transition: all .2s; pointer-events: none; z-index: 9999; max-width: 320px; }
+  #toast.show { opacity: 1; transform: translateY(0); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    nav { gap: 12px; }
+    .nav-tab span { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">
+    <svg class="nav-logo-icon" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M100 12 L168 38 L168 100 C168 140 138 168 100 184 C62 168 32 140 32 100 L32 38 Z" fill="#14532d"/>
+      <path d="M100 26 L154 48 L154 100 C154 132 128 156 100 170 C72 156 46 132 46 100 L46 48 Z" fill="#16a34a"/>
+      <path d="M100 40 L140 58 L140 100 C140 124 118 144 100 156 C82 144 60 124 60 100 L60 58 Z" fill="#4ade80"/>
+      <text x="100" y="120" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="62" font-weight="700" fill="#052e16">S</text>
+    </svg>
+    <span>Sentinel</span>MCP <span style="color:var(--muted);font-weight:400;font-size:12px;margin-left:4px">Admin</span>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showSection('services')">⚡ <span>Services</span></button>
+    <button class="nav-tab" onclick="showSection('testlab')">🧪 <span>Test Lab</span></button>
+    <button class="nav-tab" onclick="showSection('dashboards')">🔗 <span>Dashboards</span></button>
+    <button class="nav-tab" onclick="showSection('threats')">🚨 <span>Threats</span></button>
+  </div>
+  <div class="nav-right">
+    <div id="gw-status" style="font-size:12px;color:var(--muted)">checking gateway...</div>
+    <div class="status-dot" id="status-dot" style="background:var(--amber)"></div>
+  </div>
+</nav>
+
+<main>
+
+<!-- ── SERVICES ─────────────────────────────────────── -->
+<section id="section-services" class="section active">
+  <div class="page-header">
+    <h1>Services</h1>
+    <p>Start, stop, build, and view logs for every component.</p>
+  </div>
+
+  <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap">
+    <button class="btn btn-primary btn-lg" onclick="startAll()">▶ Start All Core</button>
+    <button class="btn btn-lg" onclick="startAllDemo()">▶ Start Demo Stack</button>
+    <button class="btn btn-lg" onclick="refreshServices()">↻ Refresh Status</button>
+  </div>
+
+  <div class="filter-bar" id="cat-filter">
+    <button class="filter-btn active" data-cat="all" onclick="filterCat(this,'all')">All</button>
+    <button class="filter-btn" data-cat="core" onclick="filterCat(this,'core')">Core</button>
+    <button class="filter-btn" data-cat="ui" onclick="filterCat(this,'ui')">Dashboards</button>
+    <button class="filter-btn" data-cat="demo" onclick="filterCat(this,'demo')">Demo</button>
+    <button class="filter-btn" data-cat="observability" onclick="filterCat(this,'observability')">Observability</button>
+    <button class="filter-btn" data-cat="infra" onclick="filterCat(this,'infra')">Infra</button>
+  </div>
+
+  <div class="grid-2" id="services-grid">
+    <div class="card" style="grid-column:1/-1;text-align:center;color:var(--muted);padding:40px">
+      <div class="spinner" style="width:20px;height:20px;border-width:3px;margin:0 auto 10px"></div>
+      Loading services...
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <h2 style="font-size:14px;font-weight:600">Service Logs</h2>
+      <select id="log-service-select" style="width:180px" onchange="loadLogs()">
+        <option value="">Select service...</option>
+      </select>
+      <button class="btn btn-sm" onclick="loadLogs()">Refresh</button>
+    </div>
+    <div class="output-box" id="logs-output"><span class="output-placeholder">Select a service above to view logs.</span></div>
+  </div>
+</section>
+
+<!-- ── TEST LAB ─────────────────────────────────────── -->
+<section id="section-testlab" class="section">
+  <div class="page-header">
+    <h1>Test Lab</h1>
+    <p>Run security probes, health checks, and gateway tests directly from the browser.</p>
+  </div>
+
+  <div class="grid-4" style="margin-bottom:24px" id="gw-metrics">
+    <div class="metric-card"><div class="metric-label">Gateway</div><div class="metric-value" id="m-status">—</div><div class="metric-sub">Health status</div></div>
+    <div class="metric-card"><div class="metric-label">Threats (30d)</div><div class="metric-value" id="m-threats">—</div><div class="metric-sub">Total detected</div></div>
+    <div class="metric-card"><div class="metric-label">Blocked</div><div class="metric-value" id="m-blocked">—</div><div class="metric-sub">By OWASP type</div></div>
+    <div class="metric-card"><div class="metric-label">Latency L1</div><div class="metric-value" id="m-latency">—</div><div class="metric-sub">Redis schema cache ms</div></div>
+  </div>
+
+  <div class="sub-tabs">
+    <button class="sub-tab active" onclick="showSubTab('probe')">Security Probe</button>
+    <button class="sub-tab" onclick="showSubTab('analyze')">Analyze Server</button>
+    <button class="sub-tab" onclick="showSubTab('health')">Health Check</button>
+    <button class="sub-tab" onclick="showSubTab('report')">Compliance Report</button>
+  </div>
+
+  <!-- Probe -->
+  <div id="subtab-probe">
+    <div class="card">
+      <h3 style="font-size:14px;font-weight:600;margin-bottom:14px">Active Security Probe</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Fires OWASP LLM Top 10 attack probes at a target MCP server and returns a risk report.</p>
+      <div class="form-group">
+        <label>Target MCP Server URL</label>
+        <div style="display:flex;gap:8px">
+          <input id="probe-url" type="text" placeholder="http://localhost:8002" value="http://demo-poisoned:8002">
+          <button class="btn btn-sm" onclick="setProbeUrl('http://demo-clean:8001')">Clean</button>
+          <button class="btn btn-sm" onclick="setProbeUrl('http://demo-poisoned:8002')">Poisoned</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Attack Types</label>
+        <div class="checkbox-group" id="attack-checks">
+          <label class="checkbox-item"><input type="checkbox" value="all" checked onchange="toggleAll(this)"> All attacks</label>
+          <label class="checkbox-item"><input type="checkbox" value="prompt_injection"> LLM01 Prompt Injection</label>
+          <label class="checkbox-item"><input type="checkbox" value="rug_pull"> LLM05 Rug Pull</label>
+          <label class="checkbox-item"><input type="checkbox" value="pii_leak"> LLM06 PII Leak</label>
+          <label class="checkbox-item"><input type="checkbox" value="sql_injection"> LLM07 SQL Injection</label>
+          <label class="checkbox-item"><input type="checkbox" value="path_traversal"> LLM07 Path Traversal</label>
+          <label class="checkbox-item"><input type="checkbox" value="ssrf"> LLM07 SSRF</label>
+          <label class="checkbox-item"><input type="checkbox" value="dos"> LLM04 DoS</label>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-lg" id="probe-btn" onclick="runProbe()">▶ Run Probe</button>
+    </div>
+
+    <div class="result-panel" id="probe-result">
+      <div class="result-header">
+        <h3>Probe Results</h3>
+        <span id="probe-risk-badge" class="risk-badge">—</span>
+        <span id="probe-score" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px" id="probe-summary"></div>
+      <table class="findings-table">
+        <thead><tr><th>Attack</th><th>Verdict</th><th>Severity</th><th>OWASP</th><th>Details</th></tr></thead>
+        <tbody id="probe-findings"></tbody>
+      </table>
+      <div style="margin-top:12px;padding:10px 14px;background:var(--bg3);border-radius:var(--radius);font-size:12px;color:var(--muted)" id="probe-recommendation"></div>
+    </div>
+  </div>
+
+  <!-- Analyze -->
+  <div id="subtab-analyze" style="display:none">
+    <div class="card">
+      <h3 style="font-size:14px;font-weight:600;margin-bottom:14px">Analyze MCP Server</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Run the full 4-layer gateway analysis on a server URL and see the verdict.</p>
+      <div class="form-group">
+        <label>MCP Server URL</label>
+        <div style="display:flex;gap:8px">
+          <input id="analyze-url" type="text" placeholder="http://localhost:8001" value="http://demo-clean:8001">
+          <button class="btn btn-sm" onclick="document.getElementById('analyze-url').value='http://demo-clean:8001'">Clean</button>
+          <button class="btn btn-sm" onclick="document.getElementById('analyze-url').value='http://demo-poisoned:8002'">Poisoned</button>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-lg" id="analyze-btn" onclick="runAnalyze()">▶ Analyze</button>
+    </div>
+    <div class="result-panel" id="analyze-result">
+      <div class="output-box" id="analyze-output"></div>
+    </div>
+  </div>
+
+  <!-- Health -->
+  <div id="subtab-health" style="display:none">
+    <div class="card">
+      <h3 style="font-size:14px;font-weight:600;margin-bottom:14px">Gateway Health Check</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Checks Redis, layer latency benchmarks, and cached server count.</p>
+      <button class="btn btn-primary btn-lg" onclick="runHealth()">▶ Check Health</button>
+    </div>
+    <div class="result-panel show" id="health-result">
+      <div class="output-box" id="health-output"><span class="output-placeholder">Click Check Health to run.</span></div>
+    </div>
+  </div>
+
+  <!-- Report -->
+  <div id="subtab-report" style="display:none">
+    <div class="card">
+      <h3 style="font-size:14px;font-weight:600;margin-bottom:14px">Compliance Report</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Generates PCI DSS 6.4.3 and SOC2 CC6.1 compliance mapping for the last 30 days.</p>
+      <button class="btn btn-primary btn-lg" onclick="runReport()">▶ Generate Report</button>
+    </div>
+    <div class="result-panel show" id="report-result">
+      <div class="output-box" id="report-output"><span class="output-placeholder">Click Generate Report to run.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── DASHBOARDS ───────────────────────────────────── -->
+<section id="section-dashboards" class="section">
+  <div class="page-header">
+    <h1>Dashboards & UIs</h1>
+    <p>All interfaces, credentials, and step-by-step instructions.</p>
+  </div>
+  <div class="grid-2" id="dashboards-grid"></div>
+</section>
+
+<!-- ── THREATS ──────────────────────────────────────── -->
+<section id="section-threats" class="section">
+  <div class="page-header">
+    <h1>Recent Threats</h1>
+    <p>Last 20 threat events detected by the gateway.</p>
+  </div>
+  <div style="display:flex;gap:10px;margin-bottom:16px">
+    <button class="btn btn-primary" onclick="loadThreats()">↻ Refresh</button>
+  </div>
+  <div class="card">
+    <div style="display:flex;gap:12px;margin-bottom:14px" id="threat-stats-row">
+      <span style="font-size:12px;color:var(--muted)">Loading...</span>
+    </div>
+    <div id="threats-list"><div class="output-placeholder" style="padding:20px 0">Loading threats...</div></div>
+  </div>
+</section>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+const API = 'http://localhost:9000';
+let allServices = [];
+let currentCat = 'all';
+
+// ── Navigation ──────────────────────────────────────────────────────────────
+
+function showSection(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('section-' + name).classList.add('active');
+  event.target.closest('.nav-tab').classList.add('active');
+  if (name === 'threats') loadThreats();
+  if (name === 'dashboards') renderDashboards();
+  if (name === 'testlab') loadMetrics();
+}
+
+function showSubTab(name) {
+  document.querySelectorAll('[id^="subtab-"]').forEach(el => el.style.display = 'none');
+  document.getElementById('subtab-' + name).style.display = 'block';
+  document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+// ── Toast ───────────────────────────────────────────────────────────────────
+
+function toast(msg, ok = true) {
+  const el = document.getElementById('toast');
+  el.textContent = (ok ? '✓ ' : '✗ ') + msg;
+  el.style.borderColor = ok ? 'rgba(61,214,140,.4)' : 'rgba(255,92,92,.4)';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── Services ────────────────────────────────────────────────────────────────
+
+const ICONS = {
+  core: '⚙️', ui: '🖥️', demo: '🧪', observability: '🔭', infra: '🗄️'
+};
+const CAT_COLORS = {
+  core: '#5b7fff', ui: '#3dd68c', demo: '#f5a623', observability: '#a78bfa', infra: '#7b8099'
+};
+
+function statusClass(s) {
+  if (!s || s === 'stopped' || s === 'exited') return 'badge-stopped';
+  if (s === 'running') return 'badge-running';
+  if (s === 'healthy') return 'badge-healthy';
+  if (s.includes('restart')) return 'badge-restarting';
+  return 'badge-running';
+}
+
+function renderServices(services) {
+  allServices = services;
+  const sel = document.getElementById('log-service-select');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">Select service...</option>';
+  services.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.name; opt.textContent = s.label;
+    sel.appendChild(opt);
+  });
+  if (prev) sel.value = prev;
+
+  filterCatRender();
+}
+
+function filterCatRender() {
+  const grid = document.getElementById('services-grid');
+  const filtered = currentCat === 'all' ? allServices : allServices.filter(s => s.category === currentCat);
+  grid.innerHTML = filtered.map(s => `
+    <div class="service-card" data-cat="${s.category}">
+      <div class="service-header">
+        <div class="service-icon" style="background:${CAT_COLORS[s.category]}20">${ICONS[s.category] || '📦'}</div>
+        <div class="service-info">
+          <div class="service-name">${s.label}</div>
+          <div class="service-desc">${s.description}</div>
+        </div>
+      </div>
+      <div class="service-meta">
+        <span class="badge ${statusClass(s.status)}">${s.status || 'unknown'}</span>
+        ${s.port ? `<span class="badge badge-port">:${s.port}</span>` : ''}
+        <span class="badge badge-cat">${s.category}</span>
+      </div>
+      <div class="service-actions">
+        <button class="btn btn-start btn-sm" onclick="svcAction('${s.name}','start')">▶ Start</button>
+        <button class="btn btn-stop btn-sm" onclick="svcAction('${s.name}','stop')">■ Stop</button>
+        <button class="btn btn-sm" onclick="svcAction('${s.name}','restart')">↻ Restart</button>
+        <button class="btn btn-build btn-sm" onclick="svcAction('${s.name}','build')">⬡ Build</button>
+        <button class="btn btn-sm" onclick="viewLogs('${s.name}')">📋 Logs</button>
+        ${s.url ? `<a class="btn btn-sm" href="${s.url}" target="_blank">↗ Open</a>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterCat(btn, cat) {
+  currentCat = cat;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filterCatRender();
+}
+
+async function refreshServices() {
+  const resp = await fetch(API + '/admin/services');
+  const data = await resp.json();
+  renderServices(data);
+}
+
+async function svcAction(name, action) {
+  toast(`${action}ing ${name}...`, true);
+  try {
+    const resp = await fetch(`${API}/admin/services/${name}/${action}`, { method: 'POST' });
+    const data = await resp.json();
+    toast(data.ok ? `${name} ${action} OK` : `${name} ${action} failed`, data.ok);
+    if (action === 'build') showBuildOutput(data.output);
+    setTimeout(refreshServices, 1500);
+  } catch (e) {
+    toast('Admin server not reachable', false);
+  }
+}
+
+function showBuildOutput(output) {
+  const el = document.getElementById('logs-output');
+  el.innerHTML = colorize(output);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function viewLogs(name) {
+  document.getElementById('log-service-select').value = name;
+  loadLogs();
+  document.querySelector('[onclick*="section-services"]') && null;
+}
+
+async function loadLogs() {
+  const name = document.getElementById('log-service-select').value;
+  if (!name) return;
+  const el = document.getElementById('logs-output');
+  el.textContent = 'Loading...';
+  try {
+    const resp = await fetch(`${API}/admin/services/${name}/logs`);
+    const text = await resp.text();
+    el.innerHTML = colorize(text) || '<span class="output-placeholder">No logs.</span>';
+    el.scrollTop = el.scrollHeight;
+  } catch {
+    el.textContent = 'Failed to load logs.';
+  }
+}
+
+function colorize(text) {
+  return text.split('\n').map(line => {
+    if (!line) return '';
+    const l = line.toLowerCase();
+    let cls = '';
+    if (l.includes('error') || l.includes('failed') || l.includes('exception')) cls = 'line-err';
+    else if (l.includes('warn')) cls = 'line-warn';
+    else if (l.includes('info') || l.includes('started') || l.includes('ready')) cls = 'line-info';
+    else if (l.includes('blocked') || l.includes('threat')) cls = 'line-err';
+    return cls ? `<span class="${cls}">${escHtml(line)}</span>` : escHtml(line);
+  }).join('\n');
+}
+
+function startAll() {
+  ['redis', 'postgres', 'api', 'worker', 'dashboard', 'grafana'].forEach((n, i) =>
+    setTimeout(() => svcAction(n, 'start'), i * 300));
+}
+
+function startAllDemo() {
+  ['redis', 'postgres', 'api', 'worker', 'demo-clean', 'demo-poisoned', 'sentinel-mcp-server'].forEach((n, i) =>
+    setTimeout(() => svcAction(n, 'start'), i * 300));
+}
+
+// ── Gateway status ──────────────────────────────────────────────────────────
+
+async function checkGateway() {
+  try {
+    const resp = await fetch(API + '/admin/gateway/health');
+    if (resp.ok) {
+      document.getElementById('gw-status').textContent = 'Gateway online';
+      document.getElementById('gw-status').style.color = 'var(--green)';
+      document.getElementById('status-dot').style.background = 'var(--green)';
+      return true;
+    }
+  } catch {}
+  document.getElementById('gw-status').textContent = 'Gateway offline';
+  document.getElementById('gw-status').style.color = 'var(--red)';
+  document.getElementById('status-dot').style.background = 'var(--red)';
+  return false;
+}
+
+async function loadMetrics() {
+  try {
+    const [health, stats] = await Promise.all([
+      fetch(API + '/admin/gateway/health').then(r => r.json()),
+      fetch(API + '/admin/gateway/stats').then(r => r.json()),
+    ]);
+    document.getElementById('m-status').textContent = health.status === 'ok' ? '✓ OK' : '✗ Down';
+    document.getElementById('m-status').style.color = health.status === 'ok' ? 'var(--green)' : 'var(--red)';
+    document.getElementById('m-threats').textContent = stats.total ?? '—';
+    const types = Object.values(stats.by_type || {}).reduce((a, b) => a + b, 0);
+    document.getElementById('m-blocked').textContent = types;
+    const l1 = health.latency_ms?.layer1_ms;
+    document.getElementById('m-latency').textContent = l1 != null ? l1.toFixed(1) + 'ms' : '—';
+  } catch {
+    ['m-status','m-threats','m-blocked','m-latency'].forEach(id => {
+      document.getElementById(id).textContent = '—';
+    });
+  }
+}
+
+// ── Test Lab ────────────────────────────────────────────────────────────────
+
+function setProbeUrl(url) { document.getElementById('probe-url').value = url; }
+
+function toggleAll(cb) {
+  document.querySelectorAll('#attack-checks input[type=checkbox]:not([value=all])').forEach(c => {
+    c.checked = false;
+  });
+}
+
+function getAttacks() {
+  const allCb = document.querySelector('#attack-checks input[value=all]');
+  if (allCb.checked) return ['all'];
+  const checked = [...document.querySelectorAll('#attack-checks input[type=checkbox]:checked')]
+    .map(c => c.value).filter(v => v !== 'all');
+  return checked.length ? checked : ['all'];
+}
+
+async function runProbe() {
+  const btn = document.getElementById('probe-btn');
+  const url = document.getElementById('probe-url').value.trim();
+  if (!url) { toast('Enter a server URL', false); return; }
+  btn.innerHTML = '<span class="spinner"></span> Running...';
+  btn.disabled = true;
+  try {
+    const resp = await fetch(API + '/admin/gateway/probe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ server_url: url, attacks: getAttacks() }),
+    });
+    const data = await resp.json();
+    renderProbeResult(data);
+  } catch (e) {
+    toast('Probe failed: ' + e.message, false);
+  } finally {
+    btn.innerHTML = '▶ Run Probe';
+    btn.disabled = false;
+  }
+}
+
+function renderProbeResult(data) {
+  const panel = document.getElementById('probe-result');
+  panel.classList.add('show');
+  const badge = document.getElementById('probe-risk-badge');
+  badge.textContent = data.risk_level;
+  badge.className = 'risk-badge risk-' + data.risk_level;
+  document.getElementById('probe-score').textContent = `Risk score: ${data.risk_score}/10 · ${data.vulnerabilities_found}/${data.total_attacks} vulnerable`;
+  document.getElementById('probe-summary').textContent = `Server: ${data.server_url} · Tested: ${new Date(data.tested_at).toLocaleString()}`;
+  document.getElementById('probe-recommendation').innerHTML = `<strong>Recommendation:</strong> ${escHtml(data.recommendation)}`;
+  const tbody = document.getElementById('probe-findings');
+  tbody.innerHTML = (data.findings || []).map(f => `
+    <tr>
+      <td>${f.attack_type.replace(/_/g,' ')}</td>
+      <td class="verdict-${f.verdict}">${f.verdict}</td>
+      <td>${f.severity}</td>
+      <td style="color:var(--accent)">${f.owasp_id}</td>
+      <td style="color:var(--muted);font-size:11px">${escHtml(f.details)}</td>
+    </tr>
+  `).join('');
+}
+
+async function runAnalyze() {
+  const btn = document.getElementById('analyze-btn');
+  const url = document.getElementById('analyze-url').value.trim();
+  if (!url) { toast('Enter a URL', false); return; }
+  btn.innerHTML = '<span class="spinner"></span> Analyzing...';
+  btn.disabled = true;
+  document.getElementById('analyze-result').classList.add('show');
+  document.getElementById('analyze-output').innerHTML = 'Running...';
+  try {
+    const resp = await fetch(API + '/admin/gateway/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ server_url: url }),
+    });
+    const data = await resp.json();
+    document.getElementById('analyze-output').innerHTML = colorize(JSON.stringify(data, null, 2));
+  } catch (e) {
+    document.getElementById('analyze-output').textContent = 'Error: ' + e.message;
+  } finally {
+    btn.innerHTML = '▶ Analyze'; btn.disabled = false;
+  }
+}
+
+async function runHealth() {
+  document.getElementById('health-result').classList.add('show');
+  document.getElementById('health-output').innerHTML = 'Checking...';
+  try {
+    const resp = await fetch(API + '/admin/gateway/health');
+    const data = await resp.json();
+    document.getElementById('health-output').innerHTML = colorize(JSON.stringify(data, null, 2));
+  } catch (e) {
+    document.getElementById('health-output').textContent = 'Gateway unreachable: ' + e.message;
+  }
+}
+
+async function runReport() {
+  document.getElementById('report-result').classList.add('show');
+  document.getElementById('report-output').innerHTML = 'Generating...';
+  try {
+    const resp = await fetch(API + '/admin/gateway/report');
+    const data = await resp.json();
+    document.getElementById('report-output').innerHTML = colorize(JSON.stringify(data, null, 2));
+  } catch (e) {
+    document.getElementById('report-output').textContent = 'Error: ' + e.message;
+  }
+}
+
+// ── Threats ─────────────────────────────────────────────────────────────────
+
+async function loadThreats() {
+  try {
+    const [tr, stats] = await Promise.all([
+      fetch(API + '/admin/gateway/threats').then(r => r.json()),
+      fetch(API + '/admin/gateway/stats').then(r => r.json()),
+    ]);
+    const statsRow = document.getElementById('threat-stats-row');
+    const byType = stats.by_type || {};
+    statsRow.innerHTML = Object.entries(byType).map(([k, v]) =>
+      `<span class="badge" style="background:rgba(255,92,92,.1);color:var(--red)">${k}: ${v}</span>`
+    ).join('') || '<span style="font-size:12px;color:var(--muted)">No threats recorded yet.</span>';
+
+    const list = document.getElementById('threats-list');
+    const threats = tr.threats || [];
+    if (!threats.length) {
+      list.innerHTML = '<div style="padding:20px 0;color:var(--muted);font-size:13px">No threats in the last 7 days.</div>';
+      return;
+    }
+    list.innerHTML = threats.map(t => `
+      <div class="threat-item">
+        <span class="threat-type">${t.threat_type}</span>
+        <span class="threat-tool">${t.tool_name || '—'}</span>
+        <span class="threat-layer">L${t.layer}</span>
+        <span class="badge ${t.blocked ? 'badge-stopped' : 'badge-restarting'}" style="font-size:10px">${t.blocked ? 'BLOCKED' : 'FLAGGED'}</span>
+        <span style="font-size:11px;color:var(--muted);min-width:100px">${t.pattern || ''}</span>
+        <span class="threat-time">${new Date(t.timestamp).toLocaleString()}</span>
+      </div>
+    `).join('');
+  } catch (e) {
+    document.getElementById('threats-list').innerHTML = '<div style="color:var(--red);padding:16px 0">Failed to load: ' + e.message + '</div>';
+  }
+}
+
+// ── Dashboards ───────────────────────────────────────────────────────────────
+
+const DASHBOARDS = [
+  {
+    icon: '⚙️', color: '#5b7fff',
+    title: 'SentinelMCP Gateway API',
+    subtitle: 'FastAPI + Swagger interactive docs',
+    url: 'http://localhost:8888/docs',
+    label: 'Open Swagger Docs',
+    creds: null,
+    tag: null,
+    steps: [
+      'Click "Open Swagger Docs" to browse all endpoints',
+      'Click "Authorize" → enter API key: dev-key-123',
+      'Try GET /health to verify the gateway is running',
+      'Try POST /probe to run a security pen test',
+    ],
+  },
+  {
+    icon: '🖥️', color: '#3dd68c',
+    title: 'React Threat Dashboard',
+    subtitle: 'Live threat feed, latency charts, blocked calls',
+    url: 'http://localhost:5173',
+    label: 'Open Dashboard',
+    creds: null,
+    tag: null,
+    steps: [
+      'Open the dashboard — it auto-polls the gateway',
+      'Run make probe in terminal to generate threat data',
+      'Watch the threat count and OWASP chart update live',
+      'Check the latency panel for per-layer timings',
+    ],
+  },
+  {
+    icon: '📊', color: '#f5a623',
+    title: 'Grafana',
+    subtitle: 'OWASP analytics, threat trends, SQL queries',
+    url: 'http://localhost:3000',
+    label: 'Open Grafana',
+    creds: 'admin / sentinel',
+    tag: null,
+    steps: [
+      'Login with admin / sentinel',
+      'Go to Dashboards → SentinelMCP',
+      'Run a probe to generate data, then refresh',
+      'Use Explore to write custom PromQL / SQL queries',
+    ],
+  },
+  {
+    icon: '🔭', color: '#a78bfa',
+    title: 'Jaeger (OpenTelemetry)',
+    subtitle: 'Distributed traces — per-layer span timings',
+    url: 'http://localhost:16686',
+    label: 'Open Jaeger',
+    creds: null,
+    tag: 'needs SENTINEL_OTEL_ENDPOINT=http://jaeger:4317',
+    steps: [
+      'Start Jaeger: docker compose --profile observability up -d',
+      'Restart API: SENTINEL_OTEL_ENDPOINT=http://jaeger:4317 docker compose up -d api',
+      'Make a few requests to the gateway to generate traces',
+      'In Jaeger: select Service = sentinelmcp → Find Traces',
+    ],
+  },
+  {
+    icon: '🔒', color: '#f472b6',
+    title: 'Auth Status',
+    subtitle: 'JWT/OAuth configuration and JWKS debug',
+    url: 'http://localhost:8888/auth/status',
+    label: 'Check Auth Status',
+    creds: null,
+    tag: null,
+    steps: [
+      'Visit /auth/status to see which auth modes are active',
+      'Set SENTINEL_JWT_SECRET in .env for HS256 dev tokens',
+      'Set SENTINEL_JWKS_URL for RS256 production OIDC',
+      'Visit /auth/jwks to inspect loaded public keys',
+    ],
+  },
+  {
+    icon: '🧪', color: '#2dd4bf',
+    title: 'VS Code Extension',
+    subtitle: 'Status bar threat count + probe commands',
+    url: null,
+    label: null,
+    creds: null,
+    tag: 'installed via sentinelmcp-0.1.0.vsix',
+    steps: [
+      'Status bar shows 🛡 Sentinel: Safe (bottom-right)',
+      'Cmd+Shift+P → SentinelMCP: Run Security Probe',
+      'Enter http://localhost:8002 to probe the poisoned server',
+      'Cmd+Shift+P → SentinelMCP: Show Recent Threats',
+    ],
+  },
+];
+
+function renderDashboards() {
+  const grid = document.getElementById('dashboards-grid');
+  grid.innerHTML = DASHBOARDS.map(d => `
+    <div class="dash-card">
+      <div class="dash-card-header">
+        <div class="dash-icon" style="background:${d.color}20">${d.icon}</div>
+        <div>
+          <div class="dash-title">${d.title}</div>
+          <div class="dash-subtitle">${d.subtitle}</div>
+        </div>
+      </div>
+      ${d.url ? `
+        <div class="dash-url">
+          <a href="${d.url}" target="_blank">${d.url}</a>
+          <button class="btn btn-sm" onclick="navigator.clipboard.writeText('${d.url}').then(()=>toast('Copied!'))">copy</button>
+        </div>
+      ` : ''}
+      ${d.creds ? `<div class="dash-creds">Login: <strong>${d.creds}</strong></div>` : ''}
+      ${d.tag ? `<div style="font-size:11px;color:var(--amber);background:rgba(245,166,35,.08);padding:5px 10px;border-radius:var(--radius)">${d.tag}</div>` : ''}
+      <ol class="dash-steps">
+        ${d.steps.map((s, i) => `<li data-n="${i+1}">${escHtml(s)}</li>`).join('')}
+      </ol>
+      ${d.url ? `<a class="btn btn-primary" href="${d.url}" target="_blank">↗ ${d.label}</a>` : ''}
+    </div>
+  `).join('');
+}
+
+// ── Utils ────────────────────────────────────────────────────────────────────
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+(async function init() {
+  await checkGateway();
+  await refreshServices();
+  setInterval(checkGateway, 15000);
+  setInterval(refreshServices, 20000);
+})();
+</script>
+</body>
+</html>

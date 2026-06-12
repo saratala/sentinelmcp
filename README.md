@@ -1,4 +1,8 @@
-# SentinelMCP — AI Agent Security Gateway
+<p align="center">
+  <img src="assets/wordmark.svg" alt="SentinelMCP — AI Agent Security Gateway" width="360"/>
+</p>
+
+---
 
 **Every tool, verified.**
 
