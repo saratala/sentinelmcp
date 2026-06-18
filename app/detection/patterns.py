@@ -21,7 +21,7 @@ _RAW_PATTERNS: list[tuple[str, str]] = [
     ("ignore_previous_instructions",
      r"ignore\s+(all\s+)?(previous|prior|above)\s+instructions?"),
     ("exfiltration_url",
-     r"(export|send|exfiltrate|upload|post|forward)\s+.{0,50}(to|at|via)\s+https?://"),
+     r"(export|send|exfiltrate|upload|post|forward)\s+[^\n]{0,50}(to|at|via)\s+https?://"),
     ("conceal_from_user",
      r"do\s+not\s+(tell|inform|notify|mention)\s+(the\s+)?(user|operator|human)"),
     ("hidden_instruction",
@@ -41,6 +41,20 @@ _RAW_PATTERNS: list[tuple[str, str]] = [
      r"\b(exec(ute)?|eval|shell|subprocess|os\.system)\s*[\(\[]"),
     ("dangerous_action_privilege",
      r"\b(grant|revoke|sudo|chmod\s+777|setuid)\b"),
+    # IPI: Financial transaction exfiltration (InjecAgent DH gap)
+    ("financial_transfer",
+     r"\b(transfer|wire|send|withdraw|deposit|pay)\b[^\n]{0,60}\b(account|wallet|bitcoin|btc|usd|eur)\b"),
+    # IPI: Email-based data exfiltration (InjecAgent DS gap)
+    ("email_exfiltration",
+     r"\b(send|email|forward|share)\b[^\n]{0,80}\b(to|at)\b[^\n]{0,40}@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
+    # IPI: Account security tampering
+    ("security_control_disable",
+     r"\b(disable|turn\s+off|deactivate|bypass)\b[^\n]{0,40}\b(two.factor|2fa|mfa|authentication|verification)\b"),
+    ("credential_share",
+     r"\b(share|send|forward|give)\b[^\n]{0,40}\b(password|passwd|credential|token|secret)\b"),
+    # IPI: Covert file moves (hidden dirs, tmp)
+    ("covert_file_move",
+     r"\b(move|copy|cp|mv)\b[^\n]{0,60}\b(\.hidden|\.ssh|/tmp|/var/tmp|/dev/shm)\b"),
 ]
 
 INJECTION_PATTERNS: list[tuple[str, "re.Pattern[str]"]] = [
@@ -57,9 +71,15 @@ def _decode_b64_segments(text: str) -> str:
     """Extract and decode any plausible base64 segments found in text."""
     decoded_parts: list[str] = []
     for token in re.findall(r"[A-Za-z0-9+/]{%d,}={0,2}" % _B64_MIN_LEN, text):
+        # Real base64 payloads contain +, /, or = padding; CamelCase identifiers don't.
+        if not any(c in token for c in ("+", "/", "=")):
+            continue
         try:
             decoded = base64.b64decode(token + "==").decode("utf-8", errors="ignore")
-            if any(c.isalpha() for c in decoded):
+            # Reject binary garbage: require ≥80% printable ASCII to avoid
+            # catastrophic backtracking when injection patterns run on the decoded bytes.
+            printable = sum(0x20 <= ord(c) < 0x7F for c in decoded)
+            if decoded and printable / len(decoded) >= 0.8:
                 decoded_parts.append(decoded)
         except Exception:
             pass

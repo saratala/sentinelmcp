@@ -27,8 +27,10 @@ log = structlog.get_logger(__name__)
 _OUTPUT_PATTERNS: list[tuple[str, "re.Pattern[str]"]] = [
     ("output_exfiltration_url",
      re.compile(
-         r"(send|post|upload|exfiltrate|forward)\s+.{0,80}https?://\S+",
-         re.IGNORECASE | re.DOTALL,
+         # Non-DOTALL + possessive-safe: pre-check for "http" before running
+         # to avoid catastrophic backtracking on inputs with no URL present.
+         r"(send|post|upload|exfiltrate|forward)\s+[^\n]{0,80}https?://\S+",
+         re.IGNORECASE,
      )),
     ("output_ignore_instructions",
      re.compile(
@@ -48,6 +50,16 @@ _OUTPUT_PATTERNS: list[tuple[str, "re.Pattern[str]"]] = [
     ("output_conceal_action",
      re.compile(
          r"do\s+not\s+(tell|inform|notify|mention)\s+(the\s+)?(user|operator|human)",
+         re.IGNORECASE,
+     )),
+    ("output_email_exfiltration",
+     re.compile(
+         r"\b(send|email|forward|share)\b[^\n]{0,80}\b(to|at)\b[^\n]{0,40}@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+         re.IGNORECASE,
+     )),
+    ("output_financial_transfer",
+     re.compile(
+         r"\b(transfer|wire|withdraw|deposit)\b[^\n]{0,60}\b(account|wallet|bitcoin|btc|usd|eur)\b",
          re.IGNORECASE,
      )),
     ("output_hidden_instruction",

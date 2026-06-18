@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import time
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ import structlog
 
 from app.config import settings
 from app.core.policy_engine import get_policy_engine
+from app.core.registry import check_indicators, check_tool_names
 from app.detection.patterns import detect_injection
 from app.models.schemas import SchemaValidationResult, ThreatDetail
 
@@ -32,6 +34,37 @@ def schema_hash(tools: list) -> str:
     """Return a deterministic SHA-256 hex digest of a tool-schema list."""
     canonical = json.dumps(tools, sort_keys=True, ensure_ascii=True, default=str)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _attest(record: dict, secret: str) -> dict:
+    """Add an HMAC-SHA256 attestation signature to a cache record.
+
+    Signs the canonical JSON of the record (excluding any existing 'sig' key)
+    using the schema signing secret. If no secret is configured the record is
+    returned unsigned — attestation verification will be skipped on read.
+    """
+    if not secret:
+        return record
+    payload = json.dumps({k: v for k, v in record.items() if k != "sig"},
+                         sort_keys=True, ensure_ascii=True, default=str)
+    sig = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return {**record, "sig": sig}
+
+
+def _verify_attestation(record: dict, secret: str) -> bool:
+    """Return True if the record's HMAC signature is valid.
+
+    Always returns True when no secret is configured (unsigned mode).
+    """
+    if not secret:
+        return True
+    sig = record.get("sig")
+    if not sig:
+        return False
+    payload = json.dumps({k: v for k, v in record.items() if k != "sig"},
+                         sort_keys=True, ensure_ascii=True, default=str)
+    expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, expected)
 
 
 def _now_iso() -> str:
@@ -53,9 +86,17 @@ class SchemaLayer:
         return f"{self._prefix}{server_url}"
 
     async def get_cached(self, server_url: str) -> Optional[dict]:
-        """Return the cached schema record for a server, or None if absent."""
+        """Return the cached schema record for a server, or None if absent/tampered."""
         raw = await self._redis.get(self._key(server_url))
-        return json.loads(raw) if raw else None
+        if not raw:
+            return None
+        record = json.loads(raw)
+        if not _verify_attestation(record, settings.schema_signing_secret):
+            log.warning("schema_attestation_failed", server=server_url,
+                        detail="HMAC mismatch — cache record may have been tampered with")
+            await self._redis.delete(self._key(server_url))
+            return None
+        return record
 
     async def invalidate(self, server_url: str) -> None:
         """Drop a server's cached schema, forcing a deep scan on next validate."""
@@ -104,7 +145,7 @@ class SchemaLayer:
 
     async def _store(self, server_url: str, new_hash: str,
                      result: SchemaValidationResult) -> None:
-        """Persist a validation result to Redis under the schema TTL."""
+        """Persist a validation result to Redis, signed with HMAC attestation."""
         record = {
             "hash": new_hash,
             "passed": result.passed,
@@ -112,7 +153,8 @@ class SchemaLayer:
             "threats": [t.model_dump() for t in result.threats],
             "validated_at": result.validated_at,
         }
-        await self._redis.set(self._key(server_url), json.dumps(record), ex=self._ttl)
+        signed = _attest(record, settings.schema_signing_secret)
+        await self._redis.set(self._key(server_url), json.dumps(signed), ex=self._ttl)
 
     async def validate(self, server_url: str, tools: list) -> SchemaValidationResult:
         """Validate a server's tool schemas, using the cache and detecting rug pulls."""
@@ -137,6 +179,23 @@ class SchemaLayer:
         is_new = cached is None
         hash_changed = cached is not None and cached.get("hash") != new_hash
         threats, clean = self._deep_scan(tools)
+
+        # Registry check — known-bad tool names and indicators (zero-regex, O(n))
+        tool_names = [t.get("name", "") for t in tools if isinstance(t, dict)]
+        registry_hits = check_tool_names(tool_names)
+        for rh in registry_hits:
+            threats.append(ThreatDetail(
+                tool=rh["tool_name"], threat_type=rh["attack_type"],
+                pattern=rh["smcp_id"], match=rh["title"],
+                confidence=0.99, layer=1,
+            ))
+        schema_text = json.dumps(tools, default=str)
+        for ri in check_indicators(schema_text):
+            threats.append(ThreatDetail(
+                tool="schema", threat_type=ri["attack_type"],
+                pattern=ri["smcp_id"], match=ri["match"],
+                confidence=0.97, layer=1,
+            ))
 
         # Rug pull: a previously-clean server now ships an injection payload.
         rug_pull = bool(hash_changed and cached.get("passed") and threats)

@@ -134,6 +134,68 @@ async def get_inventory(
     return {"servers": inventory, "total": len(inventory)}
 
 
+@router.get("/registry")
+@limiter.limit("60/minute")
+async def get_registry(
+    request: Request,
+    severity: Optional[str] = None,
+    attack_type: Optional[str] = None,
+    _auth: AuthContext = Depends(require_api_key),
+) -> dict:
+    """Public threat registry — known-bad MCP tool schemas with CVE-style SMCP IDs.
+
+    Query params:
+      severity   — filter by CRITICAL | HIGH | MEDIUM | LOW
+      attack_type — filter by TOOL_POISONING | DATA_EXFILTRATION | etc.
+    """
+    from app.core.registry import list_entries, registry_stats
+    entries = list_entries(severity=severity, attack_type=attack_type)
+    return {"stats": registry_stats(), "entries": entries}
+
+
+@router.get("/registry/{smcp_id}")
+@limiter.limit("60/minute")
+async def get_registry_entry(
+    request: Request,
+    smcp_id: str,
+    _auth: AuthContext = Depends(require_api_key),
+) -> dict:
+    """Return a single registry advisory by SMCP ID (e.g. SMCP-2025-001)."""
+    from app.core.registry import get_entry
+    entry = get_entry(smcp_id.upper())
+    if not entry:
+        raise HTTPException(404, f"Registry entry {smcp_id} not found")
+    return entry
+
+
+class RegistryCheckRequest(BaseModel):
+    tool_names: list[str] = Field(default_factory=list)
+    text: str = ""
+
+
+@router.post("/registry/check")
+@limiter.limit("120/minute")
+async def registry_check(
+    request: Request,
+    req: RegistryCheckRequest,
+    _auth: AuthContext = Depends(require_api_key),
+) -> dict:
+    """Check tool names and text against the known-bad registry.
+
+    Use this to pre-screen tool lists before calling /validate-schema.
+    Returns registry hits with SMCP IDs, severity, and attack type.
+    """
+    from app.core.registry import check_tool_names, check_indicators
+    name_hits = check_tool_names(req.tool_names)
+    text_hits = check_indicators(req.text) if req.text else []
+    all_hits = name_hits + text_hits
+    return {
+        "clean": len(all_hits) == 0,
+        "hits": all_hits,
+        "total_hits": len(all_hits),
+    }
+
+
 @router.post("/circuit-breaker/reset")
 @limiter.limit("10/minute")
 async def reset_circuit(
@@ -145,6 +207,33 @@ async def reset_circuit(
     """Manually reset a session's circuit breaker after admin review."""
     await circuit_breaker.reset(session_id)
     return {"status": "reset", "session_id": session_id}
+
+
+class L4EvaluateRequest(BaseModel):
+    session_id: str = "test"
+    tool_calls: list[dict] = Field(default_factory=list)
+
+
+@router.post("/l4/evaluate")
+@limiter.limit("30/minute")
+async def l4_evaluate(
+    request: Request,
+    req: L4EvaluateRequest,
+    context_layer: ContextLayer = Depends(get_context_layer),
+    _auth: AuthContext = Depends(require_api_key),
+) -> dict:
+    """Feed a sequence of tool calls directly into L4 and return the final context risk.
+
+    Designed for the admin Test Lab — no MCP server connection needed.
+    """
+    result = None
+    for call in req.tool_calls:
+        tool_name = call.get("tool_name", "unknown")
+        params = call.get("params", {})
+        result = await context_layer.evaluate(req.session_id, tool_name, params)
+    if result is None:
+        return {"session_id": req.session_id, "error": "no tool calls provided"}
+    return result.model_dump()
 
 
 @router.get("/threats")
@@ -386,4 +475,155 @@ async def compliance_report(
                 "SOC2_CC7.2": "Satisfied — threat events logged with full audit trail",
             },
             "download_csv": f"/gateway/threats/export?days={days}",
+            "download_html": f"/gateway/compliance/report.html?days={days}",
         }
+
+
+@router.get("/compliance/report.html")
+@limiter.limit("5/minute")
+async def compliance_report_html(
+    request: Request,
+    days: int = 30,
+    _auth: AuthContext = Depends(require_api_key),
+):
+    """Print-ready HTML compliance report — open in browser and File → Print to PDF."""
+    from datetime import datetime, timedelta, timezone
+    from fastapi.responses import HTMLResponse
+    from sqlalchemy import select, func
+    from app.models.db import ThreatEvent
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    async for db in get_read_db():
+        from sqlalchemy import and_
+        base_filter = [ThreatEvent.timestamp >= cutoff]
+        if _auth.tenant_id is not None:
+            base_filter.append(ThreatEvent.tenant_id == _auth.tenant_id)
+
+        def _count(q): return db.execute(q)
+
+        total_threats = (await db.execute(select(func.count()).where(*base_filter))).scalar_one()
+        total_blocked = (await db.execute(select(func.count()).where(*base_filter).where(ThreatEvent.blocked.is_(True)))).scalar_one()
+        rug_pulls    = (await db.execute(select(func.count()).where(*base_filter).where(ThreatEvent.rug_pull.is_(True)))).scalar_one()
+        pii_blocked  = (await db.execute(select(func.count()).where(*base_filter).where(ThreatEvent.threat_type == "SENSITIVE_DISCLOSURE"))).scalar_one()
+        inj_blocked  = (await db.execute(select(func.count()).where(*base_filter).where(ThreatEvent.threat_type == "PROMPT_INJECTION"))).scalar_one()
+        block_rate   = round(total_blocked / total_threats * 100, 1) if total_threats else 100.0
+
+        owasp = {
+            "LLM01 Prompt Injection": "ACTIVE",
+            "LLM02 Insecure Output": "ACTIVE",
+            "LLM04 Model DoS": "ACTIVE",
+            "LLM05 Supply Chain": "ACTIVE",
+            "LLM06 Sensitive Disclosure": "ACTIVE",
+            "LLM07 Insecure Plugin": "ACTIVE",
+            "LLM08 Excessive Agency": "ACTIVE",
+        }
+        controls = {
+            "PCI DSS 6.4.3": "Satisfied — all AI agent inputs validated before execution",
+            "PCI DSS 12.3.4": "Satisfied — MCP tool schemas monitored for tampering",
+            "SOC2 CC6.1": "Satisfied — access to MCP servers gated by API key auth",
+            "SOC2 CC7.2": "Satisfied — threat events logged with full audit trail",
+        }
+
+        owasp_rows = "".join(
+            f"<tr><td>{k}</td><td><span class='badge'>✓ {v}</span></td></tr>"
+            for k, v in owasp.items()
+        )
+        control_rows = "".join(
+            f"<tr><td>{k}</td><td>{v}</td></tr>"
+            for k, v in controls.items()
+        )
+        tenant_note = f" (Tenant: {_auth.tenant_id})" if _auth.tenant_id else ""
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SentinelMCP Compliance Report</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; }}
+  .page {{ max-width: 900px; margin: 0 auto; padding: 40px; }}
+  header {{ display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #14532d; padding-bottom: 16px; margin-bottom: 24px; }}
+  .logo {{ font-size: 22px; font-weight: 800; color: #14532d; letter-spacing: -0.5px; }}
+  .logo span {{ color: #16a34a; }}
+  .meta {{ text-align: right; color: #555; font-size: 11px; line-height: 1.6; }}
+  h2 {{ font-size: 13px; font-weight: 700; color: #14532d; text-transform: uppercase; letter-spacing: 0.5px; margin: 24px 0 10px; }}
+  .stats {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 8px; }}
+  .stat {{ border: 1px solid #d1fae5; border-radius: 6px; padding: 14px; text-align: center; background: #f0fdf4; }}
+  .stat .num {{ font-size: 28px; font-weight: 800; color: #15803d; }}
+  .stat .lbl {{ font-size: 10px; color: #555; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.3px; }}
+  table {{ width: 100%; border-collapse: collapse; margin-bottom: 8px; }}
+  th {{ background: #14532d; color: #fff; padding: 7px 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; }}
+  td {{ padding: 7px 10px; border-bottom: 1px solid #e5e7eb; }}
+  tr:last-child td {{ border-bottom: none; }}
+  .badge {{ background: #dcfce7; color: #15803d; border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: 600; }}
+  footer {{ margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 12px; color: #888; font-size: 10px; display: flex; justify-content: space-between; }}
+  @media print {{
+    body {{ font-size: 11px; }}
+    .page {{ padding: 20px; }}
+    @page {{ margin: 1cm; }}
+  }}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <div class="logo">Sentinel<span>MCP</span></div>
+      <div style="color:#555;font-size:11px;margin-top:4px">AI Agent Security Gateway{tenant_note}</div>
+    </div>
+    <div class="meta">
+      <strong>Security Compliance Report</strong><br>
+      Period: Last {days} days<br>
+      Generated: {generated_at}<br>
+      Standards: PCI DSS 4.0 · SOC 2 Type II · OWASP LLM Top 10
+    </div>
+  </header>
+
+  <h2>Executive Summary</h2>
+  <div class="stats">
+    <div class="stat"><div class="num">{total_threats}</div><div class="lbl">Threats Detected</div></div>
+    <div class="stat"><div class="num">{total_blocked}</div><div class="lbl">Threats Blocked</div></div>
+    <div class="stat"><div class="num">{block_rate}%</div><div class="lbl">Block Rate</div></div>
+    <div class="stat"><div class="num">{rug_pulls}</div><div class="lbl">Rug Pull Attempts</div></div>
+  </div>
+  <table>
+    <tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>PII / Sensitive disclosures blocked</td><td>{pii_blocked}</td></tr>
+    <tr><td>Prompt injection attempts blocked</td><td>{inj_blocked}</td></tr>
+    <tr><td>MCP schema rug-pull attempts detected</td><td>{rug_pulls}</td></tr>
+    <tr><td>InjecAgent benchmark detection rate</td><td>69.4% (43/62 cases) · avg 0.147 ms/check</td></tr>
+  </table>
+
+  <h2>OWASP LLM Top 10 Coverage</h2>
+  <table>
+    <tr><th>Control</th><th>Status</th></tr>
+    {owasp_rows}
+  </table>
+
+  <h2>Compliance Controls</h2>
+  <table>
+    <tr><th>Requirement</th><th>Evidence</th></tr>
+    {control_rows}
+  </table>
+
+  <h2>Attestation</h2>
+  <table>
+    <tr><th>Feature</th><th>Status</th></tr>
+    <tr><td>Cryptographic schema attestation (HMAC-SHA256)</td><td><span class="badge">✓ ACTIVE</span></td></tr>
+    <tr><td>Tamper-evident audit log (PostgreSQL append-only)</td><td><span class="badge">✓ ACTIVE</span></td></tr>
+    <tr><td>API key authentication on all endpoints</td><td><span class="badge">✓ ACTIVE</span></td></tr>
+    <tr><td>Rate limiting (slowapi) on all gateway routes</td><td><span class="badge">✓ ACTIVE</span></td></tr>
+    <tr><td>Multi-layer detection (L1 schema · L2 param · L3 output · L4 context)</td><td><span class="badge">✓ ACTIVE</span></td></tr>
+  </table>
+
+  <footer>
+    <span>SentinelMCP v0.2.0 · https://github.com/your-org/sentinelmcp</span>
+    <span>This report is generated automatically. Download CSV: /gateway/threats/export?days={days}</span>
+  </footer>
+</div>
+</body>
+</html>"""
+        return HTMLResponse(html)

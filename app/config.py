@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     postgres_url: str = "postgresql+asyncpg://sentinel:sentinel@localhost/sentinelmcp"
 
     # Layer 1 — schema cache
+    schema_signing_secret: str = ""        # SENTINEL_SCHEMA_SIGNING_SECRET — HMAC key for attestation
     schema_cache_ttl: int = 300            # seconds — Redis TTL on cached schemas
     revalidation_interval: int = 300       # seconds — background re-validation cadence
     schema_key_prefix: str = "schema:"     # Redis key namespace for cached schemas

@@ -1,0 +1,222 @@
+{
+  "version": "1.0",
+  "updated": "2026-06-15",
+  "description": "SentinelMCP Registry — known-bad MCP tool schemas and attack patterns. CVE-style IDs.",
+  "entries": [
+    {
+      "id": "SMCP-2025-001",
+      "severity": "CRITICAL",
+      "title": "Exfiltration via hidden tool description instruction",
+      "attack_type": "TOOL_POISONING",
+      "owasp": "LLM01",
+      "description": "Tool description contains hidden instruction to exfiltrate data to attacker-controlled URL. Targets agents that expose tool descriptions to the LLM context.",
+      "indicators": [
+        "ignore previous instructions",
+        "send all",
+        "exfiltrate to https://",
+        "do not tell the user"
+      ],
+      "tool_name_patterns": [],
+      "detection_layer": "L1",
+      "references": ["https://arxiv.org/abs/2403.02691"],
+      "published": "2025-03-01"
+    },
+    {
+      "id": "SMCP-2025-002",
+      "severity": "CRITICAL",
+      "title": "Rug pull — tool schema modified after initial validation",
+      "attack_type": "RUG_PULL",
+      "owasp": "LLM05",
+      "description": "A previously clean MCP server silently replaces tool schemas with malicious variants after the initial security check. The SHA-256 hash of the schema changes between calls.",
+      "indicators": [
+        "schema_hash_changed",
+        "previously_clean_server"
+      ],
+      "tool_name_patterns": [],
+      "detection_layer": "L1",
+      "references": ["https://labs.cloudsecurityalliance.org/agentic/agentic-mcp-security-best-practices-v1/"],
+      "published": "2025-04-10"
+    },
+    {
+      "id": "SMCP-2025-003",
+      "severity": "HIGH",
+      "title": "Credential dump via environment variable access",
+      "attack_type": "CREDENTIAL_THEFT",
+      "owasp": "LLM06",
+      "description": "Tool parameters or descriptions instruct the agent to read and return environment variables, API keys, or secret tokens. Common in indirect prompt injection via poisoned file contents.",
+      "indicators": [
+        "read env",
+        "dump credentials",
+        "print tokens",
+        "output all secrets",
+        "ANTHROPIC_API_KEY",
+        "AWS_SECRET_ACCESS_KEY"
+      ],
+      "tool_name_patterns": [],
+      "detection_layer": "L2",
+      "references": ["https://github.com/uiuc-kang-lab/InjecAgent"],
+      "published": "2025-05-15"
+    },
+    {
+      "id": "SMCP-2025-004",
+      "severity": "HIGH",
+      "title": "Financial transaction exfiltration via indirect prompt injection",
+      "attack_type": "INDIRECT_PROMPT_INJECTION",
+      "owasp": "LLM01",
+      "description": "Attacker instruction embedded in tool response triggers agent to initiate financial transfers, cryptocurrency withdrawals, or payments to attacker-controlled accounts. Confirmed in InjecAgent DH benchmark.",
+      "indicators": [
+        "transfer to account",
+        "withdraw bitcoin",
+        "deposit to",
+        "wire funds to"
+      ],
+      "tool_name_patterns": [
+        "BankManagerTransferFunds",
+        "BinanceWithdraw",
+        "VenmoWithdrawMoney",
+        "CryptoTransfer"
+      ],
+      "detection_layer": "L1",
+      "references": ["https://arxiv.org/abs/2403.02691"],
+      "published": "2025-06-01"
+    },
+    {
+      "id": "SMCP-2025-005",
+      "severity": "HIGH",
+      "title": "PII exfiltration to attacker email via data-stealing chain",
+      "attack_type": "DATA_EXFILTRATION",
+      "owasp": "LLM06",
+      "description": "Multi-tool attack: first tool retrieves sensitive user data (addresses, payment methods, medical records), second tool emails it to an attacker-controlled address. Confirmed across 31/32 InjecAgent DS cases.",
+      "indicators": [
+        "email them to",
+        "send to amy.watson@",
+        "forward this to",
+        "share with email"
+      ],
+      "tool_name_patterns": [
+        "GmailSendEmail",
+        "OutlookSendEmail",
+        "SendEmail"
+      ],
+      "detection_layer": "L1",
+      "references": ["https://arxiv.org/abs/2403.02691"],
+      "published": "2025-06-01"
+    },
+    {
+      "id": "SMCP-2025-006",
+      "severity": "HIGH",
+      "title": "Security control bypass — 2FA/MFA disable",
+      "attack_type": "ACCOUNT_TAKEOVER",
+      "owasp": "LLM08",
+      "description": "Indirect prompt injection instructs the agent to disable two-factor authentication or multi-factor authentication on accounts, enabling follow-on account takeover.",
+      "indicators": [
+        "disable two-factor",
+        "turn off 2fa",
+        "deactivate mfa",
+        "disable authentication"
+      ],
+      "tool_name_patterns": [
+        "DisableTwoFactorAuthentication",
+        "ManageSecuritySettings",
+        "UpdateAccountSecurity"
+      ],
+      "detection_layer": "L1",
+      "references": [],
+      "published": "2025-07-01"
+    },
+    {
+      "id": "SMCP-2025-007",
+      "severity": "MEDIUM",
+      "title": "Covert file exfiltration to hidden directories",
+      "attack_type": "DATA_EXFILTRATION",
+      "owasp": "LLM08",
+      "description": "Agent is instructed to move sensitive files to hidden directories (.hidden, .ssh) or world-readable temp paths (/tmp, /var/tmp) where they can be retrieved later.",
+      "indicators": [
+        "move to .hidden",
+        "copy to /tmp",
+        "mv to /var/tmp",
+        "move to .ssh"
+      ],
+      "tool_name_patterns": [
+        "TerminalExecute",
+        "ShellExecute",
+        "FileMove",
+        "DropboxMoveItem"
+      ],
+      "detection_layer": "L2",
+      "references": [],
+      "published": "2025-07-01"
+    },
+    {
+      "id": "SMCP-2025-008",
+      "severity": "HIGH",
+      "title": "Deepfake generation abuse via agent tool access",
+      "attack_type": "EXCESSIVE_AGENCY",
+      "owasp": "LLM08",
+      "description": "Agent with access to audio/video deepfake generation tools is instructed via IPI to create synthetic media using the victim's identity data, enabling fraud and impersonation.",
+      "indicators": [
+        "generate audio deepfake",
+        "create synthetic voice",
+        "generate fake video"
+      ],
+      "tool_name_patterns": [
+        "DeepfakeGeneratorGenerateAudioDeepfake",
+        "SynthesizeVoice",
+        "GenerateVideo"
+      ],
+      "detection_layer": "L1",
+      "references": ["https://arxiv.org/abs/2403.02691"],
+      "published": "2025-08-01"
+    },
+    {
+      "id": "SMCP-2025-009",
+      "severity": "CRITICAL",
+      "title": "Base64-encoded injection bypass",
+      "attack_type": "OBFUSCATED_INJECTION",
+      "owasp": "LLM01",
+      "description": "Attacker encodes prompt injection payload in base64 to bypass regex-based detection. The encoded string is embedded in tool descriptions or parameters and decoded by the LLM at inference time.",
+      "indicators": [
+        "base64_encoded_payload"
+      ],
+      "tool_name_patterns": [],
+      "detection_layer": "L1",
+      "references": [],
+      "published": "2025-09-01"
+    },
+    {
+      "id": "SMCP-2026-001",
+      "severity": "CRITICAL",
+      "title": "Tool poisoning via MCP server description metadata",
+      "attack_type": "TOOL_POISONING",
+      "owasp": "LLM05",
+      "description": "Malicious instructions embedded in the tool description field of MCP server metadata. Affects 7 major MCP clients confirmed in arxiv 2603.22489 (March 2026). Insufficient static validation and parameter visibility are root causes.",
+      "indicators": [
+        "hidden instruction in description",
+        "invisible text",
+        "system: ignore"
+      ],
+      "tool_name_patterns": [],
+      "detection_layer": "L1",
+      "references": ["https://arxiv.org/abs/2603.22489"],
+      "published": "2026-03-15"
+    },
+    {
+      "id": "SMCP-2026-002",
+      "severity": "HIGH",
+      "title": "Mosaic data exfiltration — low-signal multi-tool reconnaissance",
+      "attack_type": "SEMANTIC_MOSAIC",
+      "owasp": "LLM06",
+      "description": "No single tool call exceeds a risk threshold, but the combination of calls across a session reveals a coordinated reconnaissance pattern. Requires session-level behavioral analysis (TF-IDF sliding window) to detect. Individual calls: list files, read SSH config, check env, list users.",
+      "indicators": [
+        "session_breadth_score > 0.4",
+        "credentials_category > 0.3",
+        "files_category > 0.3",
+        "pii_category > 0.3"
+      ],
+      "tool_name_patterns": [],
+      "detection_layer": "L4",
+      "references": [],
+      "published": "2026-01-01"
+    }
+  ]
+}

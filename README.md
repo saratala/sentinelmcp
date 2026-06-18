@@ -10,6 +10,8 @@ Real-time security gateway for MCP (Model Context Protocol) connections.
 Detects tool poisoning, rug pulls, credential theft, and semantic mosaic attacks
 in under 5ms — before your AI agent acts on them.
 
+> **InjecAgent Benchmark:** 69.4% detection rate (43/62 cases) · avg 0.147 ms/check · [full scorecard](benchmarks/results/injecagent.md)
+
 ---
 
 ## What it catches

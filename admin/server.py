@@ -316,6 +316,52 @@ async def gw_analyze(body: AnalyzeBody):
         raise HTTPException(502, str(e))
 
 
+class L4TestBody(BaseModel):
+    session_id: str = "admin-test"
+    tool_calls: list[str] = []
+
+
+@app.post("/admin/gateway/l4test")
+async def gw_l4test(body: L4TestBody):
+    """Send a sequence of tool calls through the gateway invoke endpoint
+    and return the final L4 context + LLM analysis result."""
+    import json as _json
+
+    # Parse "tool_name {json}" lines into structured calls
+    structured: list[dict] = []
+    for raw_call in body.tool_calls:
+        raw_call = raw_call.strip()
+        if not raw_call:
+            continue
+        parts = raw_call.split(" ", 1)
+        tool_name = parts[0]
+        try:
+            params = _json.loads(parts[1]) if len(parts) > 1 else {}
+        except Exception:
+            params = {"raw": parts[1]} if len(parts) > 1 else {}
+        structured.append({"tool_name": tool_name, "params": params})
+
+    try:
+        ctx = await _gw("POST", "/gateway/l4/evaluate", {
+            "session_id": body.session_id,
+            "tool_calls": structured,
+        })
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+    llm = ctx.get("llm_analysis")
+    return {
+        "session_id": body.session_id,
+        "calls_processed": len(structured),
+        "tfidf_risk": ctx.get("risk_score"),
+        "category_scores": ctx.get("category_scores", {}),
+        "alerted": ctx.get("alerted", False),
+        "window_size": ctx.get("window_size"),
+        "llm_analysis": llm,
+        "llm_skipped": llm is None,
+    }
+
+
 # ── Serve SPA ─────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
