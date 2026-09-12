@@ -365,6 +365,7 @@ All routes require `X-Sentinel-Key` unless noted.
 |---|---|---|
 | `GET` | `/gateway/registry`, `/gateway/registry/{smcp_id}` | Browse SMCP threat advisories |
 | `POST` | `/gateway/registry/check` | Pre-screen tool names/text against known-bad registry |
+| `GET` | `/gateway/threats/explain` | Explain a threat type (OWASP + fix) + related advisories |
 | `GET` | `/gateway/threats` | Paginated audit log (filter by server/type/since) |
 | `GET` | `/gateway/threats/stats` | Aggregate counts by type & layer |
 | `GET` | `/gateway/threats/export` | CSV export for compliance |

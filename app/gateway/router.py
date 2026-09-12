@@ -236,6 +236,24 @@ async def l4_evaluate(
     return result.model_dump()
 
 
+@router.get("/threats/explain")
+@limiter.limit("120/minute")
+async def explain_threat(
+    request: Request,
+    threat_type: str,
+    pattern: str = "",
+    context: str = "",
+    _auth: AuthContext = Depends(require_api_key),
+) -> dict:
+    """Explain a threat type — what it is, how it's detected, how to fix it.
+
+    Returns a curated OWASP-mapped explanation enriched with any matching SMCP
+    registry advisories. Backs the SDK's ``client.explain(...)`` helper.
+    """
+    from app.core.threat_kb import explain as _explain
+    return _explain(threat_type, pattern=pattern, context=context)
+
+
 @router.get("/threats")
 @limiter.limit("30/minute")
 async def get_threats(
