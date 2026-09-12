@@ -25,3 +25,6 @@ extension/*.vsix
 # Frontend deps
 dashboard/node_modules/
 node_modules/
+
+# Local Claude Code config (machine-specific paths)
+.claude/
