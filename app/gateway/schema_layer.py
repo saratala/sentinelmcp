@@ -189,13 +189,23 @@ class SchemaLayer:
                 pattern=rh["smcp_id"], match=rh["title"],
                 confidence=0.99, layer=1,
             ))
-        schema_text = json.dumps(tools, default=str)
-        for ri in check_indicators(schema_text):
-            threats.append(ThreatDetail(
-                tool="schema", threat_type=ri["attack_type"],
-                pattern=ri["smcp_id"], match=ri["match"],
-                confidence=0.97, layer=1,
-            ))
+        # Whole-schema indicator sweep. Only scan tools not already flagged
+        # per-tool above, so a single poisoned tool isn't double-counted in
+        # blocked_tools by both the deep scan and the coarse indicator net.
+        flagged = {t.tool for t in threats}
+        for tool in tools:
+            if not isinstance(tool, dict):
+                continue
+            name = str(tool.get("name", ""))
+            if name in flagged:
+                continue
+            for ri in check_indicators(json.dumps(tool, default=str)):
+                threats.append(ThreatDetail(
+                    tool=name or "schema", threat_type=ri["attack_type"],
+                    pattern=ri["smcp_id"], match=ri["match"],
+                    confidence=0.97, layer=1,
+                ))
+                break  # one indicator threat per tool is enough to block it
 
         # Rug pull: a previously-clean server now ships an injection payload.
         rug_pull = bool(hash_changed and cached.get("passed") and threats)

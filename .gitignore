@@ -21,3 +21,7 @@ sentinelmcp_validation_arch.jsx
 extension/node_modules/
 extension/out/
 extension/*.vsix
+
+# Frontend deps
+dashboard/node_modules/
+node_modules/
