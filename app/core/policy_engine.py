@@ -150,6 +150,51 @@ class PolicyEngine:
                 hits.append(PolicyHit(rule, matched))
         return hits
 
+    def add_rule(self, raw: dict, persist: bool = True) -> bool:
+        """Add a detection rule at runtime; optionally persist to synthesized.yaml.
+
+        Used by the closed-loop hardening path so a confirmed probe finding
+        becomes a live enforcement rule with no restart. Idempotent by name:
+        a rule with an existing name is replaced. Returns True if newly added.
+        """
+        try:
+            rule = PolicyRule(raw)
+        except Exception as e:
+            log.warning("policy_add_rule_error", rule=raw.get("name"), error=str(e))
+            return False
+
+        with self._lock:
+            existing = next((i for i, r in enumerate(self._rules) if r.name == rule.name), None)
+            is_new = existing is None
+            if is_new:
+                self._rules.append(rule)
+            else:
+                self._rules[existing] = rule
+
+        if persist:
+            self._persist_synthesized(raw)
+        log.info("policy_rule_added", name=rule.name, layer=rule.layer, new=is_new)
+        return is_new
+
+    def _persist_synthesized(self, raw: dict) -> None:
+        """Append/replace a rule in policies/synthesized.yaml (created if absent)."""
+        path = self._dir / "synthesized.yaml"
+        try:
+            self._dir.mkdir(parents=True, exist_ok=True)
+            data = {"rules": []}
+            if path.exists():
+                data = yaml.safe_load(path.read_text()) or {"rules": []}
+            rules = [r for r in data.get("rules", []) if r.get("name") != raw.get("name")]
+            rules.append(raw)
+            data["rules"] = rules
+            path.write_text(yaml.safe_dump(data, sort_keys=False))
+            # Keep the watcher's hash in sync so it doesn't reload-thrash.
+            combined = "".join(p.read_text() for p in sorted(self._dir.glob("*.yaml")))
+            with self._lock:
+                self._file_hash = hashlib.md5(combined.encode()).hexdigest()
+        except Exception as e:
+            log.warning("policy_persist_error", name=raw.get("name"), error=str(e))
+
     def rule_count(self, layer: Optional[int] = None) -> int:
         with self._lock:
             if layer is None:

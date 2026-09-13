@@ -1,4 +1,4 @@
-.PHONY: install test benchmark benchmark-llm dev demo observe mcp-server agent probe report extension ha help
+.PHONY: install test benchmark benchmark-llm dev demo observe mcp-server agent probe harden report extension ha help
 
 install:  ## Install all dependencies (main + dev + demo extras)
 	.venv/bin/pip install -e ".[test,demo]"
@@ -32,6 +32,12 @@ probe:  ## Run security probe against SERVER= (e.g. make probe SERVER=http://loc
 	  -H "X-Sentinel-Key: $${SENTINEL_API_KEY:-dev-key-123}" \
 	  -H "Content-Type: application/json" \
 	  -d '{"server_url":"$(SERVER)","attacks":["all"]}' | python3 -m json.tool
+
+harden:  ## Probe SERVER= and auto-synthesize live defenses from confirmed findings (closed loop)
+	@curl -s -X POST http://localhost:8888/probe \
+	  -H "X-Sentinel-Key: $${SENTINEL_API_KEY:-dev-key-123}" \
+	  -H "Content-Type: application/json" \
+	  -d '{"server_url":"$(SERVER)","attacks":["all"],"harden":true}' | python3 -m json.tool
 
 report:  ## Show compliance report (PCI DSS + SOC2)
 	@curl -s http://localhost:8888/gateway/compliance/report \

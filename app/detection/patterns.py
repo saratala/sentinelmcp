@@ -94,6 +94,13 @@ def _decode_unicode_escapes(text: str) -> str:
 
 def detect_encoded_injection(text: str) -> Optional[dict]:
     """Detect injection attempts hidden in base64 or unicode-escaped payloads."""
+    # Invisible-Unicode concealment (approval-view fidelity) is checked first —
+    # it is the highest-fidelity signal because legitimate tool text never
+    # carries tag-block or bidi-override control characters.
+    hidden = detect_invisible_unicode(text)
+    if hidden:
+        return hidden
+
     b64_decoded = _decode_b64_segments(text)
     if b64_decoded:
         hit = detect_injection(b64_decoded)
@@ -105,6 +112,78 @@ def detect_encoded_injection(text: str) -> Optional[dict]:
         hit = detect_injection(uni_decoded)
         if hit:
             return {**hit, "pattern": f"encoded_unicode:{hit['pattern']}", "confidence": 0.85}
+
+    return None
+
+
+# ── LLM01: Invisible-Unicode / approval-view fidelity detection ───────────────
+# The "approval-view fidelity gap": a tool description or output can carry text
+# that is INVISIBLE to the human reviewing an approval dialog but is tokenized
+# and acted upon by the model. Vectors: the Unicode Tag block (U+E0000–U+E007F,
+# which maps ASCII into non-rendering codepoints), zero-width characters, and
+# bidirectional overrides. We detect the divergence between the human-rendered
+# view and the model-ingested view, decode any hidden instruction, and rescan it.
+
+# Tag block — ASCII smuggled as non-rendering codepoints (U+E0020–U+E007E ↔ 0x20–0x7E).
+_TAG_LO, _TAG_HI = 0xE0000, 0xE007F
+# Zero-width / invisible format characters.
+_ZERO_WIDTH = {0x200B, 0x200C, 0x200D, 0x2060, 0x2061, 0x2062, 0x2063, 0xFEFF, 0x180E}
+# Bidirectional overrides — reorder rendering to hide/scramble text.
+_BIDI_OVERRIDE = {0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069}
+
+
+def _decode_tag_block(text: str) -> str:
+    """Decode Unicode Tag-block codepoints back to the ASCII they smuggle."""
+    out = []
+    for ch in text:
+        cp = ord(ch)
+        if 0xE0020 <= cp <= 0xE007E:
+            out.append(chr(cp - 0xE0000))
+        elif cp == 0xE0001:  # language tag / cancel — marks a tag sequence
+            continue
+    return "".join(out)
+
+
+def detect_invisible_unicode(text: str) -> Optional[dict]:
+    """Detect content concealed from the human approval view via invisible Unicode.
+
+    Returns a hit describing the concealment class and any decoded hidden text.
+    If the hidden text itself decodes to a known injection, that is surfaced too.
+    Near-zero false positives: legitimate tool descriptions/outputs do not contain
+    tag-block, bidi-override, or runs of zero-width characters.
+    """
+    tag_chars = [c for c in text if _TAG_LO <= ord(c) <= _TAG_HI]
+    if tag_chars:
+        hidden_text = _decode_tag_block(text)
+        result = {
+            "pattern": "invisible_unicode_tag_block",
+            "match": f"{len(tag_chars)} hidden tag-block char(s)",
+            "hidden_text": hidden_text[:200],
+            "confidence": 0.97,
+        }
+        inner = detect_injection(hidden_text) if hidden_text else None
+        if inner:
+            result["decoded_threat"] = inner["pattern"]
+            result["confidence"] = 0.98
+        return result
+
+    bidi = [c for c in text if ord(c) in _BIDI_OVERRIDE]
+    if bidi:
+        return {
+            "pattern": "invisible_unicode_bidi_override",
+            "match": f"{len(bidi)} bidirectional-override char(s)",
+            "confidence": 0.9,
+        }
+
+    # Zero-width: a single ZWJ can be legitimate (emoji), so require a run —
+    # binary/zero-width-encoded payloads use many.
+    zw = [c for c in text if ord(c) in _ZERO_WIDTH]
+    if len(zw) >= 3:
+        return {
+            "pattern": "invisible_unicode_zero_width",
+            "match": f"{len(zw)} zero-width char(s)",
+            "confidence": 0.88,
+        }
 
     return None
 

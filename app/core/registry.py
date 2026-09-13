@@ -99,6 +99,31 @@ def get_entry(smcp_id: str) -> Optional[dict]:
     return _REGISTRY.get(smcp_id)
 
 
+def add_entry(entry: dict, persist: bool = True) -> bool:
+    """Insert or update a registry advisory at runtime and rebuild indices.
+
+    Used by the closed-loop hardening path to turn a confirmed probe finding
+    into a live, gateway-consulted advisory. Idempotent: re-adding the same id
+    updates in place. When ``persist`` is set the on-disk feed is rewritten so
+    the advisory survives a restart. Returns True if the entry is new.
+    """
+    smcp_id = entry["id"]
+    is_new = smcp_id not in _REGISTRY
+    _REGISTRY[smcp_id] = entry
+    _build_indices()
+    if persist:
+        try:
+            data = json.loads(_REGISTRY_PATH.read_text())
+            others = [e for e in data.get("entries", []) if e.get("id") != smcp_id]
+            data["entries"] = others + [entry]
+            _REGISTRY_PATH.write_text(json.dumps(data, indent=2))
+        except Exception as exc:
+            log.warning("registry_persist_failed", smcp_id=smcp_id, error=str(exc))
+    log.info("registry_entry_added", smcp_id=smcp_id, new=is_new,
+             attack_type=entry.get("attack_type"))
+    return is_new
+
+
 def list_entries(severity: Optional[str] = None, attack_type: Optional[str] = None) -> list[dict]:
     entries = list(_REGISTRY.values())
     if severity:

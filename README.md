@@ -49,6 +49,7 @@ It works two ways:
 | Rug pulls (schema silently changed mid-session) | LLM05 | 1 — Schema | SHA-256 hash-watch + background re-validation every 5 min |
 | Shadow / unauthorized MCP servers | LLM05 | 0 — Allowlist | Proxy rejects any target not on the server allowlist |
 | Encoded / obfuscated injection (base64, unicode-escape) | LLM01 | 1 + 3 | Decode-then-scan of descriptions and outputs |
+| **Approval-view concealment** (invisible Unicode) | LLM01 | 1 + 3 | Detects Tag-block / bidi / zero-width text hidden from the human approval UI, decodes it, and re-scans — see [Differentiators](#what-makes-it-different) |
 | Bad / smuggled parameters, privilege escalation | LLM08 | 2 — Param | Strict JSON-Schema validation + dangerous-arg scan, <1 ms, no I/O |
 | Output injection & PII/credential exfiltration | LLM02/LLM06 | 3 — Output | Async pattern scan; circuit breaker trips the **next** call |
 | Semantic mosaic (benign calls assembling sensitive data) | LLM08 | 4 — Context | TF-IDF sliding window; fires at risk_score > 0.75 |
@@ -174,6 +175,29 @@ attacks in *live* agent↔server traffic.
 > [app/gateway/probe_router.py](app/gateway/probe_router.py) registered in the `_PROBE_FNS`
 > dispatch table. Adding a new attack class (e.g. command injection, auth bypass, tool-shadowing)
 > is a matter of writing one function and adding a dispatch entry — a natural next extension.
+
+---
+
+## What makes it different
+
+Most MCP-security tools are either **static scanners** (report-only) or **point-in-time classifiers**. SentinelMCP adds capabilities the research found unmet across the market:
+
+### 🔁 Closed-loop hardening — offense automatically hardens defense
+SentinelMCP is the only gateway that owns *both* an offensive probe *and* a defensive policy engine *and* a threat registry — and wires them together. Run a probe with `harden: true` and every **confirmed** vulnerability is automatically synthesized into (1) a versioned registry advisory and (2) a **live detection rule** installed into the running gateway with no restart. A weakness found on one server instantly protects the whole fleet — no human authoring a signature.
+
+```bash
+curl -X POST http://localhost:8888/probe \
+  -H "X-Sentinel-Key: dev-key-123" -H "Content-Type: application/json" \
+  -d '{"server_url":"http://target:8001","attacks":["all"],"harden":true}'
+# → report.hardening: { advisories_created: [...], rules_installed: [...] }
+```
+
+The synthesis is deterministic and idempotent (stable IDs per server+attack), so re-probing never duplicates artifacts. Findings that are PROTECTED/INCONCLUSIVE produce nothing.
+
+### 👁️ Approval-view fidelity — catches text hidden from the human reviewer
+Attackers hide instructions in tool descriptions using the Unicode **Tag block** (ASCII smuggled as non-rendering codepoints), **bidirectional overrides**, or **zero-width** runs — invisible in the approval dialog but tokenized by the model. SentinelMCP measures the divergence between the human-rendered view and the model-ingested view, **decodes** the hidden payload, and re-scans it. Near-zero false positives (legitimate tool text has none of these), and it correctly ignores emoji joiners.
+
+Both mechanisms are covered in the [provisional patent draft #2](docs/provisional-patent-draft-2.md).
 
 ---
 
@@ -469,7 +493,9 @@ sentinelmcp/
 - [x] Alerts (Slack/PagerDuty/webhook), OpenTelemetry, Grafana, HA profile
 - [x] Python SDK, VS Code extension, React dashboard + Admin UI
 - [x] REST + A2A adapters
-- [x] InjecAgent benchmark harness (69.4% detection)
+- [x] InjecAgent benchmark harness (69.4% core → 95.2% with L4 LLM)
+- [x] **Closed-loop hardening** — probe findings auto-synthesize live rules + advisories
+- [x] **Approval-view fidelity** — invisible-Unicode / tag-block concealment detection
 - [ ] Managed cloud / Railway live demo URL
 - [ ] SOC 2 Type II (Vanta) — in progress
 - [ ] Expanded probe set (command injection, auth bypass, tool-shadowing)

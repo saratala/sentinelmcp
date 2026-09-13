@@ -38,6 +38,7 @@ class ProbeRequest(BaseModel):
     server_url: str
     attacks: list[str] = ["all"]
     timeout_secs: int = 10
+    harden: bool = False   # close the loop: synthesize live defenses from findings
 
 
 class ProbeReport(BaseModel):
@@ -50,6 +51,7 @@ class ProbeReport(BaseModel):
     findings: list[ProbeFinding]
     recommendation: str
     owasp_coverage: list[str]
+    hardening: Optional[dict] = None   # populated when harden=True
 
 
 SEVERITY_WEIGHTS = {"CRITICAL": 10, "HIGH": 7, "MEDIUM": 4, "LOW": 1}
@@ -474,6 +476,16 @@ async def run_probe(
         tenant=tenant_id,
     )
 
+    # ── Closed loop: synthesize live defenses from confirmed findings ─────────
+    hardening = None
+    if body.harden and vulnerable:
+        from app.core.synthesis import harden_from_report
+        report_dict = {
+            "server_url": body.server_url,
+            "findings": [f.model_dump() for f in clean_findings],
+        }
+        hardening = harden_from_report(report_dict)
+
     return ProbeReport(
         server_url=body.server_url,
         tested_at=datetime.now(timezone.utc).isoformat(),
@@ -484,4 +496,5 @@ async def run_probe(
         findings=clean_findings,
         recommendation=recommendation,
         owasp_coverage=owasp_ids,
+        hardening=hardening,
     )
