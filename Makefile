@@ -1,10 +1,16 @@
-.PHONY: install test dev demo observe mcp-server agent probe report extension ha help
+.PHONY: install test benchmark benchmark-llm dev demo observe mcp-server agent probe report extension ha help
 
 install:  ## Install all dependencies (main + dev + demo extras)
 	.venv/bin/pip install -e ".[test,demo]"
 
 test:  ## Run test suite
 	.venv/bin/python -m pytest tests/ -q
+
+benchmark:  ## Run InjecAgent benchmark — core L1-L3 only (deterministic, offline)
+	PYTHONPATH=. .venv/bin/python benchmarks/injecagent_runner.py
+
+benchmark-llm:  ## Run InjecAgent benchmark incl. Layer-4 LLM pass (needs Ollama or ANTHROPIC_API_KEY)
+	PYTHONPATH=. .venv/bin/python benchmarks/injecagent_runner.py --llm
 
 dev:  ## Start core services (Redis + Postgres + API)
 	docker compose up -d redis postgres api

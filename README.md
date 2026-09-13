@@ -19,7 +19,7 @@ It works two ways:
   produce a red-team vulnerability report. This is how you use SentinelMCP to **find bugs in
   other people's servers and agents** — see [Find bugs in other servers & agents](#find-bugs-in-other-servers--agents).
 
-> **InjecAgent Benchmark:** 69.4% detection rate (43/62 cases) · avg 0.147 ms/check · [full scorecard](benchmarks/results/injecagent.md)
+> **InjecAgent Benchmark:** 69.4% core detection (L1–L3, deterministic, 43/62) → **95.2% with the Layer‑4 LLM pass** (59/62, +25.8 pts) at **0% false positives** on benign controls · reproduce offline with `python benchmarks/injecagent_runner.py --llm` · [full scorecard](benchmarks/results/injecagent.md)
 
 ---
 
