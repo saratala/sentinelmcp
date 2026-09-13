@@ -19,6 +19,7 @@ from typing import Any, Awaitable, Callable, Optional
 import structlog
 
 from app.config import settings
+from app.core.drift import DriftMonitor
 from app.core.policy_engine import get_policy_engine
 from app.core.registry import check_indicators, check_tool_names
 from app.detection.patterns import detect_injection
@@ -80,6 +81,8 @@ class SchemaLayer:
         self._redis = redis_client
         self._ttl = ttl if ttl is not None else settings.schema_cache_ttl
         self._prefix = key_prefix if key_prefix is not None else settings.schema_key_prefix
+        # Longitudinal cross-session drift monitor (separate long-lived history).
+        self.drift = DriftMonitor(redis_client)
 
     def _key(self, server_url: str) -> str:
         """Return the Redis cache key for a server."""
@@ -207,8 +210,25 @@ class SchemaLayer:
                 ))
                 break  # one indicator threat per tool is enough to block it
 
+        # Cross-session drift: record each tool's description fingerprint into the
+        # longitudinal history and flag slow, across-session mutation that the
+        # intra-run hash-watch cannot see. Non-blocking — surfaced for review/alert
+        # via /gateway/drift and structured logs; does not change the pass/fail.
+        drift_signals: list[dict] = []
+        for tool in tools:
+            if not isinstance(tool, dict):
+                continue
+            try:
+                dr = await self.drift.record_and_score(
+                    server_url, str(tool.get("name", "")), str(tool.get("description", "")),
+                )
+                if dr.drifted:
+                    drift_signals.append(dr.to_dict())
+            except Exception as exc:  # drift is best-effort; never break validation
+                log.debug("drift_record_failed", server=server_url, error=str(exc))
+
         # Rug pull: a previously-clean server now ships an injection payload.
-        rug_pull = bool(hash_changed and cached.get("passed") and threats)
+        rug_pull = bool(hash_changed and (cached.get("passed") if cached else False) and threats)
         if rug_pull:
             for t in threats:
                 t.threat_type = "RUG_PULL"
@@ -233,6 +253,10 @@ class SchemaLayer:
         elif hash_changed:
             log.info("schema_changed_clean", server=server_url,
                      old_hash=cached.get("hash"), new_hash=new_hash)
+
+        if drift_signals:
+            log.warning("cross_session_drift", server=server_url,
+                        drifted_tools=len(drift_signals), signals=drift_signals)
 
         await self._store(server_url, new_hash, result)
         return result

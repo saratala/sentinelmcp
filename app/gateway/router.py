@@ -106,8 +106,23 @@ async def invoke_tool(
         input_schema=req.input_schema,
         output=req.output,
     )
+
+    # Context-oversharing accounting (OWASP MCP10) — non-blocking egress meter.
+    exposure = None
+    try:
+        from app.core.exposure import ExposureMeter
+        meter = ExposureMeter(request.app.state.redis)
+        exp = await meter.record(req.session_id, req.server_url, req.params)
+        if exp.flagged:
+            exposure = exp.to_dict()
+    except Exception:  # metering must never break an invocation
+        pass
+
     status_code = 200 if result.passed else 403
-    return {"status_code": status_code, **result.model_dump()}
+    payload = {"status_code": status_code, **result.model_dump()}
+    if exposure:
+        payload["exposure"] = exposure
+    return payload
 
 
 @router.get("/inventory")
@@ -234,6 +249,48 @@ async def l4_evaluate(
     if result is None:
         return {"session_id": req.session_id, "error": "no tool calls provided"}
     return result.model_dump()
+
+
+@router.get("/exposure/{session_id}")
+@limiter.limit("60/minute")
+async def get_exposure(
+    request: Request,
+    session_id: str,
+    _auth: AuthContext = Depends(require_api_key),
+) -> dict:
+    """Context-oversharing summary for a session (OWASP MCP10).
+
+    Shows how much sensitive data the session has pushed out and to how many
+    distinct destination servers.
+    """
+    from app.core.exposure import ExposureMeter
+    meter = ExposureMeter(request.app.state.redis)
+    return await meter.summary(session_id)
+
+
+@router.get("/drift")
+@limiter.limit("30/minute")
+async def get_drift(
+    request: Request,
+    schema_layer: SchemaLayer = Depends(get_schema_layer),
+    _auth: AuthContext = Depends(require_api_key),
+) -> dict:
+    """Cross-session drift inventory — every tracked tool and its drift status.
+
+    Surfaces slow, across-session rug-pulls and cross-tenant divergence that the
+    intra-run hash-watch cannot see.
+    """
+    tracked = await schema_layer.drift.list_tracked()
+    tools = []
+    drifted = 0
+    for key in tracked:
+        server, _, tool = key.partition("::")
+        st = await schema_layer.drift.status(server, tool)
+        if st.get("tracked") and st.get("drift_score", 0) >= 0.4:
+            drifted += 1
+        tools.append(st)
+    tools.sort(key=lambda s: s.get("drift_score", 0), reverse=True)
+    return {"tracked": len(tools), "drifted": drifted, "tools": tools}
 
 
 @router.get("/threats/explain")

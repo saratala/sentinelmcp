@@ -197,7 +197,13 @@ The synthesis is deterministic and idempotent (stable IDs per server+attack), so
 ### 👁️ Approval-view fidelity — catches text hidden from the human reviewer
 Attackers hide instructions in tool descriptions using the Unicode **Tag block** (ASCII smuggled as non-rendering codepoints), **bidirectional overrides**, or **zero-width** runs — invisible in the approval dialog but tokenized by the model. SentinelMCP measures the divergence between the human-rendered view and the model-ingested view, **decodes** the hidden payload, and re-scans it. Near-zero false positives (legitimate tool text has none of these), and it correctly ignores emoji joiners.
 
-Both mechanisms are covered in the [provisional patent draft #2](docs/provisional-patent-draft-2.md).
+### 📈 Cross-session / fleet drift detection — temporal rug-pulls
+Intra-run hash-watch only sees a description change *within* one session. SentinelMCP keeps a **longitudinal fingerprint history per (server, tool)** and scores semantic drift against the first-seen baseline — catching slow, across-session mutations *and* **cross-tenant divergence** (the same tool served a different description to different tenants = a targeted attack). Non-blocking by design (legit tools do update); surfaced via `GET /gateway/drift` and alerts. Research ranked this the #1 unmet differentiator.
+
+### 📊 Context-oversharing meter — OWASP MCP10
+Per-call PII scanning can't answer "how much sensitive data has this session pushed out, and to how many destinations?" SentinelMCP accounts for sensitive-data **egress per destination server** across a session and flags two conditions OWASP MCP10 raises: exceeding a per-server budget, and sensitive data **fanning out** across too many servers. See `GET /gateway/exposure/{session_id}`.
+
+These four mechanisms are covered in the [provisional patent draft #2](docs/provisional-patent-draft-2.md).
 
 ---
 
@@ -369,6 +375,8 @@ All routes require `X-Sentinel-Key` unless noted.
 | `POST` | `/gateway/invoke` | L2+L3+L4 — validate a single tool invocation |
 | `POST` | `/gateway/l4/evaluate` | Feed a call sequence straight into L4 (Test Lab) |
 | `GET` | `/gateway/inventory` | All monitored servers + cached security status |
+| `GET` | `/gateway/drift` | Cross-session drift inventory — temporal rug-pulls + cross-tenant divergence |
+| `GET` | `/gateway/exposure/{session_id}` | Context-oversharing summary (OWASP MCP10) |
 | `POST` | `/gateway/circuit-breaker/reset` | Unblock a session after review |
 
 **Proxy & analysis** — `app/gateway/proxy_router.py`
@@ -496,6 +504,8 @@ sentinelmcp/
 - [x] InjecAgent benchmark harness (69.4% core → 95.2% with L4 LLM)
 - [x] **Closed-loop hardening** — probe findings auto-synthesize live rules + advisories
 - [x] **Approval-view fidelity** — invisible-Unicode / tag-block concealment detection
+- [x] **Cross-session / fleet drift detection** — temporal rug-pulls + cross-tenant divergence
+- [x] **Context-oversharing meter** (OWASP MCP10) — sensitive-egress accounting per destination
 - [ ] Managed cloud / Railway live demo URL
 - [ ] SOC 2 Type II (Vanta) — in progress
 - [ ] Expanded probe set (command injection, auth bypass, tool-shadowing)

@@ -76,6 +76,30 @@ An active probe confirms SQL-injection on `target-mcp.example.com`. The synthesi
 ### 4. Approval-View Fidelity Detection (independent mechanism)
 Tool descriptions/outputs can carry content **invisible to a human approval view** yet tokenized by the model — via the Unicode Tag block (U+E0000–U+E007F mapping ASCII to non-rendering codepoints), bidirectional overrides, or zero-width runs. The detector computes the divergence between the human-rendered view and the model-ingested view: it (a) flags the presence of tag-block/bidi/zero-width concealment (near-zero false positives because legitimate tool text lacks them), (b) **decodes** any tag-block-smuggled ASCII back to plaintext, and (c) re-scans the decoded plaintext with the injection detectors, surfacing the concealed instruction. A run threshold on zero-width characters avoids false positives on legitimate emoji joiners.
 
+### 4a. Cross-Session / Fleet Drift Detection (independent mechanism)
+Intra-run hash comparison detects a tool description that changes within one
+session but is blind to gradual mutation across sessions/days and to a server
+serving *different descriptions to different tenants*. This mechanism maintains a
+longitudinal per-(server, tool) fingerprint history in a store separate from the
+short-lived schema cache, computes a normalized token fingerprint per observation,
+and scores semantic drift as `1 − similarity(current, first-seen baseline)`. It
+raises a signal when (a) similarity to the anchored baseline falls below a
+threshold across more than one distinct version (slow rug pull), or (b) the
+description served to one tenant diverges materially from that served to another
+(**cross-tenant divergence** — a targeted-attack signal). The baseline is
+preserved across history trimming so drift stays anchored to first-seen. The
+cross-tenant-divergence signal is the more clearly novel element; slow-drift
+fingerprinting per se is emerging in the literature and should be claimed narrowly.
+
+### 4b. Context-Oversharing Metering (independent mechanism)
+Per-response scanning cannot answer how much sensitive data a *session* has
+emitted and to how many destinations. This mechanism accumulates, per session and
+per destination server, the count and categories of sensitive items detected in
+outbound tool-call parameters, and raises a signal when (a) cumulative sensitive
+egress to one destination exceeds a budget, or (b) sensitive data fans out to more
+than a threshold number of distinct destinations. This quantifies the OWASP MCP10
+"context oversharing" risk, which public tooling does not currently measure.
+
 ### 5. Dual-Score Security Benchmark (independent mechanism)
 A method of reporting an AI-security detector's effectiveness as **two separated numbers**: a deterministic-core detection rate (pattern/rule layers, reproducible, no model inference) and an incremental "LLM lift" obtained by re-checking only core-missed cases with a model-based layer, accompanied by a false-positive rate measured against a benign control set — pinned to a hashed dataset, provider, and model version for reproducibility. This separates reproducible, low-latency coverage from model-dependent coverage and its precision cost.
 
@@ -97,9 +121,13 @@ A method of reporting an AI-security detector's effectiveness as **two separated
 
 **Claim 7.** A method for reporting AI-security detection effectiveness, comprising: computing a deterministic-core detection rate over a hashed dataset using non-model detection layers; computing an incremental detection contribution by re-evaluating only core-missed cases with a model-based layer; measuring a false-positive rate of the model-based layer over a benign control set; and reporting the deterministic-core rate and the incremental contribution as separate values together with the provider and model identifiers used.
 
-**Claim 8.** A system comprising an active probe subsystem, a defensive gateway with a hot-reloadable policy engine and a versioned threat registry, and a synthesis engine configured to perform the method of claims 1–5.
+**Claim 8.** A method for detecting rug-pull attacks across sessions, comprising: maintaining, per tool of a server, a longitudinal history of description fingerprints in a store separate from a per-session schema cache; scoring drift of a current fingerprint against a preserved first-seen baseline fingerprint; and raising a signal when the drift exceeds a threshold across more than one distinct version, or when the fingerprint served to one tenant diverges beyond a threshold from that served to another tenant.
 
-**Claim 9.** A non-transitory computer-readable medium storing instructions that, when executed, perform the method of any of claims 1–7.
+**Claim 9.** A method for quantifying context oversharing in an AI-agent session, comprising: accumulating, per session and per destination server, a count and category breakdown of sensitive items detected in outbound tool-call parameters; and raising a signal when the cumulative count to a destination exceeds a budget or when the number of distinct destinations receiving sensitive data exceeds a threshold.
+
+**Claim 10.** A system comprising an active probe subsystem, a defensive gateway with a hot-reloadable policy engine and a versioned threat registry, and a synthesis engine configured to perform the method of claims 1–5.
+
+**Claim 11.** A non-transitory computer-readable medium storing instructions that, when executed, perform the method of any of claims 1–9.
 
 ---
 
@@ -114,6 +142,8 @@ A security system for AI-agent tool protocols closes the loop between offensive 
 - **Closest to Claim 1 (closed loop):** Cisco **US20240333765A1** (honeypot-retrain feedback loop — improves deception content, not gateway detection/enforcement rules); Amazon **US12437058B1** and generic "continuous improvement of detection rules" patents (**US12526324**, **US11909773**) — rule improvement exists generally, but not *probe-confirmed-finding → synthesized gateway rule + registry advisory* for an agent tool protocol. Closed-loop framing appears **unclaimed**; novelty rests on the specific offense→defense synthesis pipeline.
 - **Claim 6 (approval-view fidelity):** invisible-Unicode / Tag-block detection is **well-documented as technique** (Cisco blog, NVIDIA garak, CSA, ATR rules) — the bare stripping is prior art. The defensible novelty is the *rendered-vs-model divergence* framing plus decode-and-rescan in the tool-approval context; treat as a narrower dependent claim.
 - **Claim 7 (dual-score benchmark):** the "ablation / LLM-lift over deterministic baseline" idea appears in ML-evaluation literature (prior art against a broad claim); the specific *two-number security-effectiveness reporting with pinned dataset/provider/model + benign-control FP rate* appears **unclaimed** and was assessed as the cleanest white space.
+- **Claim 8 (cross-session/fleet drift):** the general idea of fingerprinting tool descriptions across runs is **emerging** in vendor/research writing (ARMO intent-drift, Vercel tool-drift, Prefactor schema-drift) — claim narrowly. The **cross-tenant divergence** element (same tool, different description per tenant) is the more clearly novel bit; keep it central.
+- **Claim 9 (context-oversharing metering):** OWASP MCP10 names the risk and public sources state no tool quantifies it; the *per-session, per-destination sensitive-egress accounting with budget + fan-out thresholds* appears **unclaimed**, though general DLP egress-counting is long-known prior art — novelty rests on the agent-session/destination framing.
 - **Caveats:** Google Patents/USPTO full-text lags publication by ~18 months, so recent filings may be invisible. This is informal prior-art research, **not** legal advice or a freedom-to-operate opinion. A registered patent attorney should run a CPC-scoped search and chart claims before filing.
 
 ## Filing Instructions
