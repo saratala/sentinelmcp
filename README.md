@@ -71,8 +71,15 @@ hybrid where each layer runs only where it's cheap enough to run every time:
 | **L4 Context** | Every call, **parallel** | <3 ms | Semantic mosaic, cross-call data assembly |
 
 **The async-output trick:** the agent gets its response immediately; a copy is forked to the
-inspector via Celery. If a threat is found, the **circuit breaker** blocks the *next* call in
-that session — full output coverage with zero added latency on the response path.
+inspector. If a threat is found, the **circuit breaker** blocks the *next* call in
+that session — full output coverage with zero added latency on the response path. This is also
+how the **Layer-4 LLM classifier runs in production**: a clean-but-suspicious output is
+re-checked off the response path (opt-in via `SENTINEL_OUTPUT_LLM_ESCALATION`), and a positive
+verdict trips the breaker for the next call — so the 95.2% detection number applies live without
+adding latency.
+
+**Proven overhead:** the deterministic path is measured at **end-to-end p95 ≈ 0.7 ms** (p99 ≈ 0.7 ms),
+~1,670 req/s under 50× concurrency — reproduce with `make benchmark-latency` ([scorecard](benchmarks/results/latency.md)).
 
 Layer 1 cache records are signed with **HMAC-SHA256 attestation**, so a tampered cache entry is
 detected and dropped on read.
@@ -193,6 +200,8 @@ curl -X POST http://localhost:8888/probe \
 ```
 
 The synthesis is deterministic and idempotent (stable IDs per server+attack), so re-probing never duplicates artifacts. Findings that are PROTECTED/INCONCLUSIVE produce nothing.
+
+**See it live:** bring up the stack (`make demo`) then `make demo-closed-loop` — it probes a deliberately-vulnerable MCP server, auto-synthesizes advisories + rules, and shows the exploit payload getting blocked at `/gateway/invoke` afterward. The whole loop is proven in-process by [test_closed_loop_integration.py](tests/test_closed_loop_integration.py) (no Docker needed).
 
 ### 👁️ Approval-view fidelity — catches text hidden from the human reviewer
 Attackers hide instructions in tool descriptions using the Unicode **Tag block** (ASCII smuggled as non-rendering codepoints), **bidirectional overrides**, or **zero-width** runs — invisible in the approval dialog but tokenized by the model. SentinelMCP measures the divergence between the human-rendered view and the model-ingested view, **decodes** the hidden payload, and re-scans it. Near-zero false positives (legitimate tool text has none of these), and it correctly ignores emoji joiners.

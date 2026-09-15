@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     llm_grey_zone_max: float = 0.75            # SENTINEL_LLM_GREY_ZONE_MAX
     # Timeout for LLM call: 8s for local Ollama, 3s for cloud Anthropic
     llm_timeout_secs: float = 8.0             # SENTINEL_LLM_TIMEOUT_SECS
+    # Layer 3 — async LLM escalation of grey-zone outputs (opt-in; off by default
+    # so it never adds latency/cost unless explicitly enabled in production).
+    # When on, a clean-but-suspicious output is re-checked by the LLM off the
+    # response path; a positive verdict trips the circuit breaker for the NEXT call.
+    output_llm_escalation: bool = False        # SENTINEL_OUTPUT_LLM_ESCALATION
 
 
 def get_settings() -> Settings:

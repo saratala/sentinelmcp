@@ -1,4 +1,4 @@
-.PHONY: install test benchmark benchmark-llm dev demo observe mcp-server agent probe harden report extension ha help
+.PHONY: install test benchmark benchmark-llm benchmark-latency dev demo observe mcp-server agent probe harden demo-closed-loop report extension ha help
 
 install:  ## Install all dependencies (main + dev + demo extras)
 	.venv/bin/pip install -e ".[test,demo]"
@@ -11,6 +11,9 @@ benchmark:  ## Run InjecAgent benchmark — core L1-L3 only (deterministic, offl
 
 benchmark-llm:  ## Run InjecAgent benchmark incl. Layer-4 LLM pass (needs Ollama or ANTHROPIC_API_KEY)
 	PYTHONPATH=. .venv/bin/python benchmarks/injecagent_runner.py --llm
+
+benchmark-latency:  ## Prove deterministic gateway overhead is < 5ms (p50/p95/p99 + load)
+	PYTHONPATH=. .venv/bin/python benchmarks/latency_runner.py
 
 dev:  ## Start core services (Redis + Postgres + API)
 	docker compose up -d redis postgres api
@@ -32,6 +35,9 @@ probe:  ## Run security probe against SERVER= (e.g. make probe SERVER=http://loc
 	  -H "X-Sentinel-Key: $${SENTINEL_API_KEY:-dev-key-123}" \
 	  -H "Content-Type: application/json" \
 	  -d '{"server_url":"$(SERVER)","attacks":["all"]}' | python3 -m json.tool
+
+demo-closed-loop:  ## Run the closed-loop hardening demo (needs `make demo` stack up)
+	PYTHONPATH=. .venv/bin/python demo/closed_loop_demo.py
 
 harden:  ## Probe SERVER= and auto-synthesize live defenses from confirmed findings (closed loop)
 	@curl -s -X POST http://localhost:8888/probe \

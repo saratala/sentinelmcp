@@ -65,6 +65,7 @@ class OutputInspectionResult(BaseModel):
     threats: list[ThreatDetail] = Field(default_factory=list)
     circuit_tripped: bool = False
     latency_ms: float = 0.0
+    llm_escalated: bool = False   # a grey-zone output was queued for async LLM review
 
 
 # ── Layer 4 ───────────────────────────────────────────────────────────────────

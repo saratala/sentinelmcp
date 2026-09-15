@@ -157,6 +157,17 @@ services:
       - "8002:8002"
     profiles: ["demo"]
 
+  # Intentionally-vulnerable MCP server for the closed-loop hardening demo.
+  vulnerable-mcp:
+    build:
+      context: .
+      target: api
+    ports:
+      - "8003:8003"
+    command: ["python", "demo/vulnerable_mcp_server.py"]
+    profiles: ["demo"]
+    restart: on-failure
+
   # ── Observability (Jaeger) ──────────────────────────────────────────────────
 
   jaeger:
