@@ -40,9 +40,11 @@ jobs:
           SENTINEL_POSTGRES_URL: postgresql+asyncpg://sentinel:sentinel@localhost/sentinelmcp
           SENTINEL_API_KEY: test-key
           SENTINEL_AUTH_ENABLED: "false"
-        run: python -m pytest tests/ -q --tb=short
+        # Exclude tests needing a live LLM / external secrets — those run only in a
+        # deployed environment (we never put an LLM key in GitHub).
+        run: python -m pytest tests/ -q --tb=short -m "not llm and not integration"
 
-      - name: Run InjecAgent benchmark
+      - name: Run InjecAgent benchmark (core, deterministic — no LLM)
         run: python benchmarks/injecagent_runner.py   # offline by default (uses cached dataset)
 
       - name: Upload benchmark results

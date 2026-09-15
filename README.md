@@ -19,7 +19,7 @@ It works two ways:
   produce a red-team vulnerability report. This is how you use SentinelMCP to **find bugs in
   other people's servers and agents** — see [Find bugs in other servers & agents](#find-bugs-in-other-servers--agents).
 
-> **InjecAgent Benchmark:** 69.4% core detection (L1–L3, deterministic, 43/62) → **95.2% with the Layer‑4 LLM pass** (59/62, +25.8 pts) at **0% false positives** on benign controls · reproduce offline with `python benchmarks/injecagent_runner.py --llm` · [full scorecard](benchmarks/results/injecagent.md)
+> **InjecAgent Benchmark:** **67.7% core detection** (L1–L3, deterministic, 42/62 — reproduced in CI) → **77.4% with the local Layer‑4 LLM pass** (48/62, `qwen2.5:7b` via Ollama) at **0% false positives** on benign controls. The LLM lift is model-dependent — a higher-capability model (e.g. Claude Haiku via the Anthropic fallback) recovers more, but is not run in CI (no keys in GitHub). Reproduce: `python benchmarks/injecagent_runner.py` (core) or `--llm` (with a provider). [full scorecard](benchmarks/results/injecagent.md)
 
 ---
 
@@ -75,8 +75,8 @@ inspector. If a threat is found, the **circuit breaker** blocks the *next* call 
 that session — full output coverage with zero added latency on the response path. This is also
 how the **Layer-4 LLM classifier runs in production**: a clean-but-suspicious output is
 re-checked off the response path (opt-in via `SENTINEL_OUTPUT_LLM_ESCALATION`), and a positive
-verdict trips the breaker for the next call — so the 95.2% detection number applies live without
-adding latency.
+verdict trips the breaker for the next call — so the LLM-layer detection lift applies live without
+adding latency to the response path.
 
 **Proven overhead:** the deterministic path is measured at **end-to-end p95 ≈ 0.7 ms** (p99 ≈ 0.7 ms),
 ~1,670 req/s under 50× concurrency — reproduce with `make benchmark-latency` ([scorecard](benchmarks/results/latency.md)).
@@ -533,7 +533,7 @@ sentinelmcp/
 - [x] Alerts (Slack/PagerDuty/webhook), OpenTelemetry, Grafana, HA profile
 - [x] Python SDK, VS Code extension, React dashboard + Admin UI
 - [x] REST + A2A adapters
-- [x] InjecAgent benchmark harness (69.4% core → 95.2% with L4 LLM)
+- [x] InjecAgent benchmark harness (67.7% core, deterministic → 77.4% with local L4 LLM; model-dependent)
 - [x] **Closed-loop hardening** — probe findings auto-synthesize live rules + advisories
 - [x] **Approval-view fidelity** — invisible-Unicode / tag-block concealment detection
 - [x] **Cross-session / fleet drift detection** — temporal rug-pulls + cross-tenant divergence

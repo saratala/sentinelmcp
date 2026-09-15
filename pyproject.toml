@@ -49,6 +49,10 @@ test = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-v"
+markers = [
+    "llm: test requires a live LLM provider (Ollama/Anthropic) — excluded from GitHub CI, run only in a deployed environment",
+    "integration: test requires external services/secrets — excluded from GitHub CI",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*", "worker*", "sentinelmcp_sdk*"]

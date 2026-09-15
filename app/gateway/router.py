@@ -669,7 +669,7 @@ async def compliance_report_html(
     <tr><td>PII / Sensitive disclosures blocked</td><td>{pii_blocked}</td></tr>
     <tr><td>Prompt injection attempts blocked</td><td>{inj_blocked}</td></tr>
     <tr><td>MCP schema rug-pull attempts detected</td><td>{rug_pulls}</td></tr>
-    <tr><td>InjecAgent benchmark detection rate</td><td>69.4% core (L1–L3) → 95.2% with Layer-4 LLM (59/62) · 0% FP on controls</td></tr>
+    <tr><td>InjecAgent benchmark detection rate</td><td>67.7% core (L1–L3, deterministic) → 77.4% with local Layer-4 LLM · 0% FP on controls</td></tr>
   </table>
 
   <h2>OWASP LLM Top 10 Coverage</h2>
