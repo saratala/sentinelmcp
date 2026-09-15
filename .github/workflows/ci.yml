@@ -43,7 +43,7 @@ jobs:
         run: python -m pytest tests/ -q --tb=short
 
       - name: Run InjecAgent benchmark
-        run: python benchmarks/injecagent_runner.py --offline
+        run: python benchmarks/injecagent_runner.py   # offline by default (uses cached dataset)
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4

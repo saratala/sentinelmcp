@@ -8,8 +8,9 @@ from httpx import AsyncClient, ASGITransport
 
 from app.main import create_app
 from app.core.auth import provision_key, _hash_key
+from app.config import settings
 
-VALID_KEY = "dev-key-123"  # matches SENTINEL_API_KEY default in config
+VALID_KEY = settings.api_key  # the configured dev key (CI overrides SENTINEL_API_KEY)
 
 
 @pytest_asyncio.fixture

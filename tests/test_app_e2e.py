@@ -15,9 +15,12 @@ import pytest_asyncio
 from app.gateway.context_layer import ContextLayer
 from app.gateway.schema_layer import SchemaLayer
 from app.core.circuit_breaker import CircuitBreaker
+from app.config import settings
 from app.main import create_app
 
-KEY = {"X-Sentinel-Key": "dev-key-123"}
+# Use the configured API key so the suite is correct under any SENTINEL_API_KEY
+# (CI overrides it) — the dev-key fallback hash is derived from this same value.
+KEY = {"X-Sentinel-Key": settings.api_key}
 
 
 @pytest_asyncio.fixture

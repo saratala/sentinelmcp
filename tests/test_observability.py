@@ -9,9 +9,10 @@ import pytest_asyncio
 from app.core.circuit_breaker import CircuitBreaker
 from app.gateway.context_layer import ContextLayer
 from app.gateway.schema_layer import SchemaLayer
+from app.config import settings
 from app.main import create_app
 
-KEY = {"X-Sentinel-Key": "dev-key-123"}
+KEY = {"X-Sentinel-Key": settings.api_key}
 
 
 @pytest_asyncio.fixture

@@ -11,7 +11,10 @@ def test_development_is_always_clean():
 
 
 def test_production_flags_dev_key_and_wildcard_cors():
-    errors = production_preflight(Settings(environment="production"))
+    # Explicit kwargs so the scenario is deterministic regardless of the CI env
+    # (which may set SENTINEL_API_KEY / SENTINEL_CORS_ORIGINS).
+    errors = production_preflight(Settings(
+        environment="production", api_key="dev-key-123", cors_origins="*"))
     joined = " ".join(errors)
     assert any("SENTINEL_API_KEY" in e for e in errors)
     assert "CORS" in joined
@@ -29,6 +32,7 @@ def test_fully_hardened_production_passes():
     errors = production_preflight(Settings(
         environment="production",
         api_key="a-strong-random-key",
+        auth_enabled=True,        # explicit — CI sets SENTINEL_AUTH_ENABLED=false
         cors_origins="https://app.example.com",
         schema_signing_secret="hmac-secret",
         redis_password="redis-pass",
