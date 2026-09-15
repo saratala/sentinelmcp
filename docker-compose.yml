@@ -168,6 +168,27 @@ services:
     profiles: ["demo"]
     restart: on-failure
 
+  # stdio → Streamable-HTTP bridge for scanning REAL open-source MCP servers.
+  # supergateway wraps a stdio MCP server (here the official filesystem server)
+  # and exposes it over HTTP so the probe can reach it. Start with:
+  #   docker compose --profile oss up -d mcp-bridge
+  # then probe:  make probe SERVER=http://mcp-bridge:8009/mcp   (from the api container)
+  #        or:   make probe SERVER=http://localhost:8009/mcp    (from the host)
+  # Swap the --stdio command for any stdio MCP server (git, github, sqlite, …).
+  mcp-bridge:
+    image: node:20-alpine
+    command: >
+      npx -y supergateway
+      --stdio "npx -y @modelcontextprotocol/server-filesystem /data"
+      --outputTransport streamableHttp --streamableHttpPath /mcp
+      --port 8009 --host 0.0.0.0
+    ports:
+      - "8009:8009"
+    volumes:
+      - ./demo:/data:ro
+    profiles: ["oss"]
+    restart: on-failure
+
   # ── Observability (Jaeger) ──────────────────────────────────────────────────
 
   jaeger:

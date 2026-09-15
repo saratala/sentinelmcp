@@ -18,6 +18,7 @@ from pydantic import BaseModel, HttpUrl
 
 from app.core.auth import AuthContext, require_api_key, require_scope
 from app.core.rate_limit import limiter, probe_limit
+from app.gateway.mcp_client import MCPClient
 
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/probe", tags=["probe"])
@@ -73,23 +74,22 @@ ATTACK_OWASP = {
     "dos": "LLM04",
 }
 
-# ── MCP JSON-RPC helpers ──────────────────────────────────────────────────────
+# ── MCP transport helpers ─────────────────────────────────────────────────────
+# Session-aware MCP clients, one per (target URL) for the duration of a probe
+# run, so the initialize handshake + Mcp-Session-Id are shared across attacks.
+# Cleared at the start of each run_probe().
 
-def _rpc(method: str, params: dict | None = None) -> dict:
-    return {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
+_MCP_CLIENTS: dict[str, MCPClient] = {}
 
 
-async def _call(client: httpx.AsyncClient, url: str, payload: dict, timeout: float) -> dict:
-    try:
-        r = await client.post(url, json=payload, timeout=timeout)
-        return r.json()
-    except Exception as e:
-        return {"error": str(e)}
+def _mcp(client: httpx.AsyncClient, url: str, timeout: float) -> MCPClient:
+    if url not in _MCP_CLIENTS:
+        _MCP_CLIENTS[url] = MCPClient(client, url, timeout)
+    return _MCP_CLIENTS[url]
 
 
 async def _tools_list(client: httpx.AsyncClient, url: str, timeout: float) -> list[dict]:
-    resp = await _call(client, url, _rpc("tools/list"), timeout)
-    return resp.get("result", {}).get("tools", [])
+    return await _mcp(client, url, timeout).list_tools()
 
 
 async def _tools_call(
@@ -99,8 +99,7 @@ async def _tools_call(
     arguments: dict,
     timeout: float,
 ) -> dict:
-    payload = _rpc("tools/call", {"name": tool_name, "arguments": arguments})
-    return await _call(client, url, payload, timeout)
+    return await _mcp(client, url, timeout).call_tool(tool_name, arguments)
 
 # ── Individual probe functions ────────────────────────────────────────────────
 
@@ -441,6 +440,8 @@ async def run_probe(
         log.warning("probe_target_blocked", server_url=body.server_url,
                     reason=reason, tenant=_auth.tenant_id)
         raise HTTPException(status_code=400, detail=f"Probe target blocked: {reason}.")
+
+    _MCP_CLIENTS.clear()   # fresh MCP session state per probe run
 
     log.info("probe_started", server_url=body.server_url, attacks=attacks,
              tenant=_auth.tenant_id, authorized=body.authorized)

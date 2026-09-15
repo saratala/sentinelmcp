@@ -308,11 +308,24 @@ make harden SERVER=http://your-mcp-server:PORT
 # Plus a shareable per-scan report:  make probe-report SERVER=http://your-mcp-server:PORT
 ```
 
-> **Transport note.** The probe speaks **HTTP JSON-RPC**, so it scans HTTP/SSE-transport
-> MCP servers directly (including the bundled `demo/vulnerable_mcp_server.py`). Many
-> open-source reference servers default to **stdio** — front them with an HTTP bridge
-> (e.g. `mcp-proxy` / `supergateway`) and point the probe at the bridge URL. A sample
-> assessment of the vulnerable demo server is committed at
+### Scanning real open-source MCP servers
+
+The probe speaks real **MCP Streamable HTTP** — it performs the `initialize`
+handshake, carries the `Mcp-Session-Id`, and parses both JSON and SSE responses
+(with a fallback to plain JSON-RPC for the simple demo servers). So it scans any
+HTTP/SSE MCP server directly. Reference servers that default to **stdio** are
+fronted with a one-line bridge — a `supergateway` service is included:
+
+```bash
+# Wraps the official @modelcontextprotocol/server-filesystem over HTTP on :8009
+docker compose --profile oss up -d mcp-bridge
+make probe SERVER=http://mcp-bridge:8009/mcp        # scan the real OSS server
+# swap the --stdio command in docker-compose.yml for git / github / sqlite / …
+```
+
+> Verified live: probing `@modelcontextprotocol/server-filesystem` via the bridge
+> returns a real assessment (mostly PROTECTED — it's a well-built server). A sample
+> assessment of the *vulnerable* demo server is committed at
 > [docs/sample-assessment.html](docs/sample-assessment.html).
 
 ---
