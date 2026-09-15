@@ -21,6 +21,9 @@ import structlog
 log = structlog.get_logger(__name__)
 
 _REGISTRY_PATH = Path(__file__).parent.parent.parent / "registry" / "known_bad.json"
+# Runtime-synthesized advisories persist here (gitignored) so they never pollute
+# the curated, committed seed feed. Loaded on top of known_bad.json at startup.
+_SYNTHESIZED_PATH = Path(__file__).parent.parent.parent / "registry" / "synthesized.json"
 
 _REGISTRY: dict = {}
 _TOOL_NAME_INDEX: dict[str, list[str]] = {}   # tool_name_pattern -> [smcp_id, ...]
@@ -32,6 +35,14 @@ def _load() -> None:
     try:
         data = json.loads(_REGISTRY_PATH.read_text())
         _REGISTRY = {e["id"]: e for e in data.get("entries", [])}
+        # Overlay runtime-synthesized advisories (gitignored), if present.
+        if _SYNTHESIZED_PATH.exists():
+            try:
+                syn = json.loads(_SYNTHESIZED_PATH.read_text())
+                for e in syn.get("entries", []):
+                    _REGISTRY[e["id"]] = e
+            except Exception as exc:
+                log.warning("synthesized_registry_load_failed", error=str(exc))
         _build_indices()
         log.info("registry_loaded", entries=len(_REGISTRY), path=str(_REGISTRY_PATH))
     except Exception as exc:
@@ -112,11 +123,15 @@ def add_entry(entry: dict, persist: bool = True) -> bool:
     _REGISTRY[smcp_id] = entry
     _build_indices()
     if persist:
+        # Persist to the separate synthesized feed (gitignored) — never the
+        # curated, committed known_bad.json seed.
         try:
-            data = json.loads(_REGISTRY_PATH.read_text())
+            data = {"entries": []}
+            if _SYNTHESIZED_PATH.exists():
+                data = json.loads(_SYNTHESIZED_PATH.read_text())
             others = [e for e in data.get("entries", []) if e.get("id") != smcp_id]
             data["entries"] = others + [entry]
-            _REGISTRY_PATH.write_text(json.dumps(data, indent=2))
+            _SYNTHESIZED_PATH.write_text(json.dumps(data, indent=2))
         except Exception as exc:
             log.warning("registry_persist_failed", smcp_id=smcp_id, error=str(exc))
     log.info("registry_entry_added", smcp_id=smcp_id, new=is_new,

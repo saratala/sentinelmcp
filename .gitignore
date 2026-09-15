@@ -34,3 +34,8 @@ node_modules/
 
 # Vite build output (the committed build lives in docs/dashboard/)
 dashboard/dist/
+
+# Runtime-synthesized security artifacts (closed-loop) — not the curated seed
+policies/synthesized.yaml
+registry/synthesized.json
+probe-report.html
