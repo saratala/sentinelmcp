@@ -52,6 +52,9 @@ threats_total = _counter(
     "sentinelmcp_threats_total", "Threats/findings detected", ["threat_type", "layer", "source"])
 probe_runs_total = _counter(
     "sentinelmcp_probe_runs_total", "Active probe runs", ["risk_level"])
+probe_findings_total = _counter(
+    "sentinelmcp_probe_findings_total", "Active probe findings",
+    ["attack_type", "severity", "verdict"])
 auth_failures_total = _counter(
     "sentinelmcp_auth_failures_total", "Authentication/authorization failures", ["reason", "route"])
 circuit_breaker_trips_total = _counter(

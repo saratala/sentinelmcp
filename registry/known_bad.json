@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "updated": "2026-06-15",
-  "description": "SentinelMCP Registry — known-bad MCP tool schemas and attack patterns. CVE-style IDs.",
+  "description": "SentinelMCP Registry \u2014 known-bad MCP tool schemas and attack patterns. CVE-style IDs.",
   "entries": [
     {
       "id": "SMCP-2025-001",
@@ -18,13 +18,15 @@
       ],
       "tool_name_patterns": [],
       "detection_layer": "L1",
-      "references": ["https://arxiv.org/abs/2403.02691"],
+      "references": [
+        "https://arxiv.org/abs/2403.02691"
+      ],
       "published": "2025-03-01"
     },
     {
       "id": "SMCP-2025-002",
       "severity": "CRITICAL",
-      "title": "Rug pull — tool schema modified after initial validation",
+      "title": "Rug pull \u2014 tool schema modified after initial validation",
       "attack_type": "RUG_PULL",
       "owasp": "LLM05",
       "description": "A previously clean MCP server silently replaces tool schemas with malicious variants after the initial security check. The SHA-256 hash of the schema changes between calls.",
@@ -34,7 +36,9 @@
       ],
       "tool_name_patterns": [],
       "detection_layer": "L1",
-      "references": ["https://labs.cloudsecurityalliance.org/agentic/agentic-mcp-security-best-practices-v1/"],
+      "references": [
+        "https://labs.cloudsecurityalliance.org/agentic/agentic-mcp-security-best-practices-v1/"
+      ],
       "published": "2025-04-10"
     },
     {
@@ -54,7 +58,9 @@
       ],
       "tool_name_patterns": [],
       "detection_layer": "L2",
-      "references": ["https://github.com/uiuc-kang-lab/InjecAgent"],
+      "references": [
+        "https://github.com/uiuc-kang-lab/InjecAgent"
+      ],
       "published": "2025-05-15"
     },
     {
@@ -77,7 +83,9 @@
         "CryptoTransfer"
       ],
       "detection_layer": "L1",
-      "references": ["https://arxiv.org/abs/2403.02691"],
+      "references": [
+        "https://arxiv.org/abs/2403.02691"
+      ],
       "published": "2025-06-01"
     },
     {
@@ -99,13 +107,15 @@
         "SendEmail"
       ],
       "detection_layer": "L1",
-      "references": ["https://arxiv.org/abs/2403.02691"],
+      "references": [
+        "https://arxiv.org/abs/2403.02691"
+      ],
       "published": "2025-06-01"
     },
     {
       "id": "SMCP-2025-006",
       "severity": "HIGH",
-      "title": "Security control bypass — 2FA/MFA disable",
+      "title": "Security control bypass \u2014 2FA/MFA disable",
       "attack_type": "ACCOUNT_TAKEOVER",
       "owasp": "LLM08",
       "description": "Indirect prompt injection instructs the agent to disable two-factor authentication or multi-factor authentication on accounts, enabling follow-on account takeover.",
@@ -165,7 +175,9 @@
         "GenerateVideo"
       ],
       "detection_layer": "L1",
-      "references": ["https://arxiv.org/abs/2403.02691"],
+      "references": [
+        "https://arxiv.org/abs/2403.02691"
+      ],
       "published": "2025-08-01"
     },
     {
@@ -197,13 +209,15 @@
       ],
       "tool_name_patterns": [],
       "detection_layer": "L1",
-      "references": ["https://arxiv.org/abs/2603.22489"],
+      "references": [
+        "https://arxiv.org/abs/2603.22489"
+      ],
       "published": "2026-03-15"
     },
     {
       "id": "SMCP-2026-002",
       "severity": "HIGH",
-      "title": "Mosaic data exfiltration — low-signal multi-tool reconnaissance",
+      "title": "Mosaic data exfiltration \u2014 low-signal multi-tool reconnaissance",
       "attack_type": "SEMANTIC_MOSAIC",
       "owasp": "LLM06",
       "description": "No single tool call exceeds a risk threshold, but the combination of calls across a session reveals a coordinated reconnaissance pattern. Requires session-level behavioral analysis (TF-IDF sliding window) to detect. Individual calls: list files, read SSH config, check env, list users.",
@@ -217,6 +231,96 @@
       "detection_layer": "L4",
       "references": [],
       "published": "2026-01-01"
+    },
+    {
+      "id": "SMCP-AUTO-3595DCA3",
+      "severity": "CRITICAL",
+      "title": "Prompt Injection confirmed on localhost:8003 (auto-synthesized)",
+      "attack_type": "TOOL_POISONING",
+      "owasp": "LLM01",
+      "description": "SentinelMCP's active probe confirmed a prompt_injection vulnerability on localhost:8003. Tool definitions contain prompt injection patterns: ['run_query']",
+      "indicators": [],
+      "tool_name_patterns": [],
+      "detection_layer": "L1",
+      "references": [],
+      "published": "2026-09-15",
+      "source": "auto_synthesized_probe",
+      "origin_server": "http://localhost:8003/",
+      "evidence": "['run_query']"
+    },
+    {
+      "id": "SMCP-AUTO-2F3CF353",
+      "severity": "HIGH",
+      "title": "Pii Leak confirmed on localhost:8003 (auto-synthesized)",
+      "attack_type": "SENSITIVE_DISCLOSURE",
+      "owasp": "LLM06",
+      "description": "SentinelMCP's active probe confirmed a pii_leak vulnerability on localhost:8003. PII found in tool responses: [{'tool': 'run_query', 'pii_type': 'pii_ssn'}, {'tool': 'read_file', 'pii_type': 'pii_ssn'}, {'tool': 'fetch_url', 'pii_type': 'pii_ssn'}, {'tool': 'get_profile', 'pii_type': 'pii_ssn'}]",
+      "indicators": [],
+      "tool_name_patterns": [],
+      "detection_layer": "L3",
+      "references": [],
+      "published": "2026-09-15",
+      "source": "auto_synthesized_probe",
+      "origin_server": "http://localhost:8003/",
+      "evidence": "[{'tool': 'run_query', 'pii_type': 'pii_ssn'}, {'tool': 'read_file', 'pii_type': 'pii_ssn'}, {'tool': 'fetch_url', 'pii_type': 'pii_ssn'}, {'tool': 'get_profile', 'pii_type': 'pii_ssn'}]"
+    },
+    {
+      "id": "SMCP-AUTO-E2A28002",
+      "severity": "HIGH",
+      "title": "Sql Injection confirmed on localhost:8003 (auto-synthesized)",
+      "attack_type": "DANGEROUS_ACTION",
+      "owasp": "LLM07",
+      "description": "SentinelMCP's active probe confirmed a sql_injection vulnerability on localhost:8003. SQL error indicators in responses: ['syntax error', 'sql', 'table', 'column', 'syntax error', 'sql', 'table', 'column', 'syntax error', 'sql', 'table', 'column', 'syntax error', 'sql', 'table', 'column', 'syntax error', 'sql', 'table', 'column', 'syntax error', 'sql', 'table', 'column', 'syntax error', 'sql', 'ta",
+      "indicators": [
+        "' or 1=1",
+        "'; drop table",
+        "union select"
+      ],
+      "tool_name_patterns": [],
+      "detection_layer": "L2",
+      "references": [],
+      "published": "2026-09-15",
+      "source": "auto_synthesized_probe",
+      "origin_server": "http://localhost:8003/",
+      "evidence": "['syntax error', 'sql', 'table', 'column', 'syntax error', 'sql', 'table', 'column', 'syntax error', 'sql', 'table', 'column', 'syntax error', 'sql', 'table', 'column', 'syntax error', 'sql', 'table',"
+    },
+    {
+      "id": "SMCP-AUTO-984F2100",
+      "severity": "HIGH",
+      "title": "Path Traversal confirmed on localhost:8003 (auto-synthesized)",
+      "attack_type": "DANGEROUS_ACTION",
+      "owasp": "LLM07",
+      "description": "SentinelMCP's active probe confirmed a path_traversal vulnerability on localhost:8003. Path traversal indicators: ['root:', 'daemon:', 'root:', 'daemon:', 'root:', 'daemon:', 'root:', 'daemon:', 'root:', 'daemon:', 'root:', 'daemon:']",
+      "indicators": [
+        "../../../etc/passwd",
+        "..\\..\\..\\windows"
+      ],
+      "tool_name_patterns": [],
+      "detection_layer": "L2",
+      "references": [],
+      "published": "2026-09-15",
+      "source": "auto_synthesized_probe",
+      "origin_server": "http://localhost:8003/",
+      "evidence": "['root:', 'daemon:', 'root:', 'daemon:', 'root:', 'daemon:', 'root:', 'daemon:', 'root:', 'daemon:', 'root:', 'daemon:']"
+    },
+    {
+      "id": "SMCP-AUTO-1E1AB5A4",
+      "severity": "CRITICAL",
+      "title": "Ssrf confirmed on localhost:8003 (auto-synthesized)",
+      "attack_type": "DANGEROUS_ACTION",
+      "owasp": "LLM07",
+      "description": "SentinelMCP's active probe confirmed a ssrf vulnerability on localhost:8003. SSRF metadata access detected: ['ami-id', 'instance-id', 'ami-id', 'instance-id', 'ami-id', 'instance-id', 'ami-id', 'instance-id', 'ami-id', 'instance-id', 'ami-id', 'instance-id']",
+      "indicators": [
+        "169.254.169.254",
+        "metadata.google.internal"
+      ],
+      "tool_name_patterns": [],
+      "detection_layer": "L2",
+      "references": [],
+      "published": "2026-09-15",
+      "source": "auto_synthesized_probe",
+      "origin_server": "http://localhost:8003/",
+      "evidence": "['ami-id', 'instance-id', 'ami-id', 'instance-id', 'ami-id', 'instance-id', 'ami-id', 'instance-id', 'ami-id', 'instance-id', 'ami-id', 'instance-id']"
     }
   ]
 }

@@ -293,6 +293,28 @@ Every request and finding is traceable end-to-end.
 curl http://localhost:8888/metrics | grep sentinelmcp_threats_total
 ```
 
+### Scan a real MCP server → vulnerability report in Grafana
+
+Every probe run emits `sentinelmcp_probe_runs_total{risk_level}` and
+`sentinelmcp_probe_findings_total{attack_type,severity,verdict}`, which the Grafana
+board renders as a live vulnerability assessment (vulns by attack class, by
+severity, assessments by risk level, findings over time).
+
+```bash
+docker-compose up -d && docker-compose --profile observability up -d   # gateway + Prometheus + Grafana
+# Scan a target and close the loop; findings flow into Prometheus → Grafana
+make harden SERVER=http://your-mcp-server:PORT
+# Grafana → "SentinelMCP — Live Metrics" → "Active Probe — Vulnerability Assessments"
+# Plus a shareable per-scan report:  make probe-report SERVER=http://your-mcp-server:PORT
+```
+
+> **Transport note.** The probe speaks **HTTP JSON-RPC**, so it scans HTTP/SSE-transport
+> MCP servers directly (including the bundled `demo/vulnerable_mcp_server.py`). Many
+> open-source reference servers default to **stdio** — front them with an HTTP bridge
+> (e.g. `mcp-proxy` / `supergateway`) and point the probe at the bridge URL. A sample
+> assessment of the vulnerable demo server is committed at
+> [docs/sample-assessment.html](docs/sample-assessment.html).
+
 ---
 
 ## How someone tests it (step by step)

@@ -83,6 +83,36 @@
         {"expr": "sum(rate(sentinelmcp_rate_limited_total[5m]))", "legendFormat": "rate-limited"},
         {"expr": "sum(rate(sentinelmcp_requests_rejected_total[5m]))", "legendFormat": "rejected"}
       ]
+    },
+    {
+      "type": "row", "title": "Active Probe — Vulnerability Assessments",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 29}, "collapsed": false, "panels": []
+    },
+    {
+      "type": "bargauge", "title": "Vulnerabilities found by attack class",
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 30},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "options": {"displayMode": "gradient", "orientation": "horizontal"},
+      "fieldConfig": {"defaults": {"color": {"mode": "continuous-RdYlGr"}}},
+      "targets": [{"expr": "sum by (attack_type) (sentinelmcp_probe_findings_total{verdict=\"VULNERABLE\"})", "legendFormat": "{{attack_type}}"}]
+    },
+    {
+      "type": "piechart", "title": "Confirmed vulnerabilities by severity",
+      "gridPos": {"h": 9, "w": 6, "x": 12, "y": 30},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (severity) (sentinelmcp_probe_findings_total{verdict=\"VULNERABLE\"})", "legendFormat": "{{severity}}"}]
+    },
+    {
+      "type": "piechart", "title": "Assessments by risk level",
+      "gridPos": {"h": 9, "w": 6, "x": 18, "y": 30},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (risk_level) (sentinelmcp_probe_runs_total)", "legendFormat": "{{risk_level}}"}]
+    },
+    {
+      "type": "timeseries", "title": "Probe findings over time (verdict)",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 39},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (verdict) (increase(sentinelmcp_probe_findings_total[15m]))", "legendFormat": "{{verdict}}"}]
     }
   ]
 }

@@ -494,6 +494,8 @@ async def run_probe(
 
     from app.core import metrics
     metrics.probe_runs_total.labels(risk_level).inc()
+    for f in clean_findings:
+        metrics.probe_findings_total.labels(f.attack_type, f.severity, f.verdict).inc()
 
     log.warning(
         "probe_complete",

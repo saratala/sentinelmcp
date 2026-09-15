@@ -1,0 +1,32 @@
+rules:
+- name: auto_sql_injection_e2a28002
+  layer: 2
+  type: keyword
+  keywords:
+  - ''' or 1=1'
+  - '''; drop table'
+  - union select
+  threat_type: DANGEROUS_ACTION
+  owasp_id: LLM07
+  confidence: 0.95
+  enabled: true
+- name: auto_path_traversal_984f2100
+  layer: 2
+  type: keyword
+  keywords:
+  - ../../../etc/passwd
+  - ..\..\..\windows
+  threat_type: DANGEROUS_ACTION
+  owasp_id: LLM07
+  confidence: 0.95
+  enabled: true
+- name: auto_ssrf_1e1ab5a4
+  layer: 2
+  type: keyword
+  keywords:
+  - 169.254.169.254
+  - metadata.google.internal
+  threat_type: DANGEROUS_ACTION
+  owasp_id: LLM07
+  confidence: 0.95
+  enabled: true

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SentinelMCP — MCP Security Assessment</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #0f172a; background: #f8fafc; font-size: 13px; }
+  .page { max-width: 920px; margin: 0 auto; padding: 40px; background: #fff; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #14532d; padding-bottom: 18px; }
+  .logo { font-size: 24px; font-weight: 800; color: #14532d; letter-spacing: -.5px; }
+  .logo span { color: #16a34a; }
+  .meta { text-align: right; color: #475569; font-size: 12px; line-height: 1.7; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #14532d; margin: 26px 0 10px; }
+  .hero { display: grid; grid-template-columns: 200px 1fr; gap: 20px; align-items: center; margin-top: 22px;
+           background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 10px; padding: 22px; }
+  .score { text-align: center; }
+  .score .num { font-size: 54px; font-weight: 800; color: #a16207; line-height: 1; }
+  .score .lbl { font-size: 11px; color: #64748b; text-transform: uppercase; }
+  .badge { display: inline-block; color: #fff; background: #a16207; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
+  th { background: #14532d; color: #fff; text-align: left; padding: 8px 10px; font-size: 11px; text-transform: uppercase; }
+  td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  .sev { color: #fff; border-radius: 4px; padding: 2px 7px; font-size: 10px; font-weight: 700; }
+  .ev { color: #475569; font-family: ui-monospace, monospace; font-size: 11px; max-width: 240px; word-break: break-word; }
+  .rem { color: #166534; max-width: 220px; }
+  .defense { background: #ecfdf5; border-left: 4px solid #16a34a; padding: 14px 16px; border-radius: 6px; margin-top: 8px; }
+  .cta { margin-top: 26px; background: #14532d; color: #fff; border-radius: 10px; padding: 20px 24px; }
+  .cta a { color: #86efac; }
+  footer { margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 12px; color: #94a3b8; font-size: 11px; display: flex; justify-content: space-between; }
+  @media print { body { background: #fff; } .page { padding: 16px; } @page { margin: 1.2cm; } }
+</style></head>
+<body><div class="page">
+  <header>
+    <div>
+      <div class="logo">Sentinel<span>MCP</span></div>
+      <div style="color:#475569;font-size:12px;margin-top:4px">MCP Security Assessment</div>
+    </div>
+    <div class="meta">
+      <strong>Target:</strong> http://localhost:8003/<br>
+      <strong>Assessed:</strong> 2026-09-15 07:16:31 UTC<br>
+      Standard: OWASP LLM Top 10
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="score">
+      <div class="num">5.86</div>
+      <div class="lbl">Risk score / 10</div>
+      <div style="margin-top:8px"><span class="badge">MEDIUM</span></div>
+    </div>
+    <div>
+      <h2 style="margin-top:0">Executive summary</h2>
+      <p style="font-size:14px;color:#0f172a"><strong>5 of 7 attack classes are exploitable.</strong></p>
+      <p style="margin-top:8px;color:#475569">Address 5 vulnerability(ies). Review OWASP LLM Top 10 mitigations.</p>
+    </div>
+  </div>
+
+  <h2>Findings</h2>
+  <table>
+    <tr><th>Attack class</th><th>OWASP</th><th>Verdict</th><th>Severity</th><th>Evidence</th><th>Remediation</th></tr>
+    
+      <tr>
+        <td><strong>prompt_injection</strong></td>
+        <td>LLM01</td>
+        <td>🚨 VULNERABLE</td>
+        <td><span class="sev" style="background:#b91c1c">CRITICAL</span></td>
+        <td class="ev">[&#x27;run_query&#x27;]</td>
+        <td class="rem">Strip/validate tool descriptions before they reach the model; never treat tool text as instructions.</td>
+      </tr>
+      <tr>
+        <td><strong>pii_leak</strong></td>
+        <td>LLM06</td>
+        <td>🚨 VULNERABLE</td>
+        <td><span class="sev" style="background:#c2410c">HIGH</span></td>
+        <td class="ev">[{&#x27;tool&#x27;: &#x27;run_query&#x27;, &#x27;pii_type&#x27;: &#x27;pii_ssn&#x27;}, {&#x27;tool&#x27;: &#x27;read_file&#x27;, &#x27;pii_type&#x27;: &#x27;pii_ssn&#x27;}, {&#x27;tool&#x27;: &#x27;fetch_url&#x27;, &#x27;pii_type&#x27;: &#x27;pii_ssn&#x27;}, {&#x27;tool&#x27;: &#x27;get_profile&#x27;, &#x27;pii_type&#x27;: &#x27;pii_</td>
+        <td class="rem">Apply least-privilege to tool credentials and redact sensitive fields at the boundary.</td>
+      </tr>
+      <tr>
+        <td><strong>sql_injection</strong></td>
+        <td>LLM07</td>
+        <td>🚨 VULNERABLE</td>
+        <td><span class="sev" style="background:#c2410c">HIGH</span></td>
+        <td class="ev">[&#x27;syntax error&#x27;, &#x27;sql&#x27;, &#x27;table&#x27;, &#x27;column&#x27;, &#x27;syntax error&#x27;, &#x27;sql&#x27;, &#x27;table&#x27;, &#x27;column&#x27;, &#x27;syntax error&#x27;, &#x27;sql&#x27;, &#x27;table&#x27;, &#x27;column&#x27;, &#x27;syntax error&#x27;, &#x27;sql&#x27;, &#x27;table&#x27;, &#x27;column&#x27;, &#x27;syntax err</td>
+        <td class="rem">Parameterize queries server-side; reject additional properties and validate every argument.</td>
+      </tr>
+      <tr>
+        <td><strong>path_traversal</strong></td>
+        <td>LLM07</td>
+        <td>🚨 VULNERABLE</td>
+        <td><span class="sev" style="background:#c2410c">HIGH</span></td>
+        <td class="ev">[&#x27;root:&#x27;, &#x27;daemon:&#x27;, &#x27;root:&#x27;, &#x27;daemon:&#x27;, &#x27;root:&#x27;, &#x27;daemon:&#x27;, &#x27;root:&#x27;, &#x27;daemon:&#x27;, &#x27;root:&#x27;, &#x27;daemon:&#x27;, &#x27;root:&#x27;, &#x27;daemon:&#x27;]</td>
+        <td class="rem">Canonicalize and sandbox file paths; deny access outside an allow-listed root.</td>
+      </tr>
+      <tr>
+        <td><strong>ssrf</strong></td>
+        <td>LLM07</td>
+        <td>🚨 VULNERABLE</td>
+        <td><span class="sev" style="background:#b91c1c">CRITICAL</span></td>
+        <td class="ev">[&#x27;ami-id&#x27;, &#x27;instance-id&#x27;, &#x27;ami-id&#x27;, &#x27;instance-id&#x27;, &#x27;ami-id&#x27;, &#x27;instance-id&#x27;, &#x27;ami-id&#x27;, &#x27;instance-id&#x27;, &#x27;ami-id&#x27;, &#x27;instance-id&#x27;, &#x27;ami-id&#x27;, &#x27;instance-id&#x27;]</td>
+        <td class="rem">Egress-filter tool network access; block link-local/metadata and unapproved destinations.</td>
+      </tr>
+      <tr>
+        <td><strong>rug_pull</strong></td>
+        <td>LLM05</td>
+        <td>✓ PROTECTED</td>
+        <td><span class="sev" style="background:#15803d">LOW</span></td>
+        <td class="ev">hash_before=91577ab9feae031d hash_after=91577ab9feae031d</td>
+        <td class="rem"></td>
+      </tr>
+      <tr>
+        <td><strong>dos</strong></td>
+        <td>LLM04</td>
+        <td>✓ PROTECTED</td>
+        <td><span class="sev" style="background:#15803d">LOW</span></td>
+        <td class="ev">baseline_ms=12 post_payload_ms=8</td>
+        <td class="rem"></td>
+      </tr>
+  </table>
+  <p style="margin-top:8px;color:#64748b;font-size:11px">OWASP coverage tested: LLM01, LLM04, LLM05, LLM06, LLM07</p>
+
+  <h2>How SentinelMCP defends this</h2>
+  <div class="defense"><p>Deployed inline, SentinelMCP blocks each of these at the gateway before your agent acts — and its closed loop can auto-synthesize live detection rules from confirmed findings so one discovery hardens the whole fleet.</p></div>
+
+  <div class="cta">
+    <strong style="font-size:15px">Close these gaps before an agent acts on them.</strong>
+    <p style="margin-top:6px;color:#d1fae5">Deploy SentinelMCP in-VPC as a zero-trust gateway between your AI agents and
+    their MCP servers — every tool, verified in &lt;5&nbsp;ms. Reply to this report to start a design-partner pilot.</p>
+  </div>
+
+  <footer>
+    <span>SentinelMCP — Every tool, verified.</span>
+    <span>Generated automatically · informational, not a warranty of security</span>
+  </footer>
+</div></body></html>
