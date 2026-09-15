@@ -126,6 +126,35 @@ class ExposureMeter:
             log.warning("context_oversharing_detected", **result.to_dict())
         return result
 
+    async def list_flagged(self) -> dict:
+        """Return a fleet-wide summary of sessions leaking sensitive data."""
+        keys = await self._redis.keys("exposure:*")
+        sessions = []
+        for k in keys:
+            raw = await self._redis.get(k)
+            if not raw:
+                continue
+            try:
+                state = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            sensitive = {s: n for s, n in state.get("servers", {}).items() if n > 0}
+            if not sensitive:
+                continue
+            total = sum(sensitive.values())
+            over = [s for s, n in sensitive.items() if n > self._budget]
+            fan_out = len(sensitive) > self._fan_out
+            if over or fan_out:
+                sessions.append({
+                    "session_id": k[len("exposure:"):],
+                    "total_sensitive_items": total,
+                    "destinations": len(sensitive),
+                    "over_budget_servers": over,
+                    "fan_out_exceeded": fan_out,
+                })
+        sessions.sort(key=lambda s: s["total_sensitive_items"], reverse=True)
+        return {"flagged_sessions": len(sessions), "sessions": sessions[:50]}
+
     async def summary(self, session_id: str) -> dict:
         """Return the session's cumulative sensitive-egress picture."""
         raw = await self._redis.get(self._key(session_id))

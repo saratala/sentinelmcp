@@ -31,3 +31,6 @@ node_modules/
 
 # Local Claude Code config (machine-specific paths)
 .claude/
+
+# Vite build output (the committed build lives in docs/dashboard/)
+dashboard/dist/

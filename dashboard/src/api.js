@@ -16,4 +16,5 @@ export const api = {
   health: () => request('/health'),
   threats: (limit = 50) => request(`/gateway/threats?limit=${limit}`),
   inventory: () => request('/gateway/inventory'),
+  signals: () => request('/gateway/signals'),
 }

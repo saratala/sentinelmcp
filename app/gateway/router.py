@@ -268,6 +268,50 @@ async def get_exposure(
     return await meter.summary(session_id)
 
 
+@router.get("/signals")
+@limiter.limit("30/minute")
+async def get_signals(
+    request: Request,
+    schema_layer: SchemaLayer = Depends(get_schema_layer),
+    _auth: AuthContext = Depends(require_api_key),
+) -> dict:
+    """Single-pane summary of the behavioral/provenance signals for the dashboard:
+    cross-session drift, context-oversharing, and closed-loop hardening events.
+    Redis/registry-backed — no database required.
+    """
+    from app.core.exposure import ExposureMeter
+    from app.core.registry import list_entries
+
+    # Drift inventory
+    tracked = await schema_layer.drift.list_tracked()
+    drift_tools = []
+    drifted = 0
+    for key in tracked:
+        server, _, tool = key.partition("::")
+        st = await schema_layer.drift.status(server, tool)
+        if st.get("tracked"):
+            if st.get("drift_score", 0) >= 0.4:
+                drifted += 1
+            drift_tools.append(st)
+    drift_tools.sort(key=lambda s: s.get("drift_score", 0), reverse=True)
+
+    # Oversharing (fleet-wide)
+    exposure = await ExposureMeter(request.app.state.redis).list_flagged()
+
+    # Hardening — auto-synthesized advisories from confirmed probe findings
+    auto = [e for e in list_entries()
+            if str(e.get("source", "")).startswith("auto_synthesized")]
+
+    return {
+        "drift": {"tracked": len(drift_tools), "drifted": drifted, "top": drift_tools[:10]},
+        "oversharing": exposure,
+        "hardening": {
+            "advisories": len(auto),
+            "recent": sorted(auto, key=lambda e: e.get("published", ""), reverse=True)[:10],
+        },
+    }
+
+
 @router.get("/drift")
 @limiter.limit("30/minute")
 async def get_drift(

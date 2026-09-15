@@ -152,6 +152,10 @@ You get back a `risk_score` (0–10), a `risk_level` (SAFE→CRITICAL), and per-
 severity, evidence, and remediation. Rate-limited (tunable via `SENTINEL_RATE_LIMIT_PROBE`) because
 probing is expensive.
 
+> **Shareable report.** Add `"format":"html"` to get a **branded, print-to-PDF assessment** you can
+> hand a prospect ("here's what we found in your MCP server, and how we'd defend it") — the
+> top-of-funnel design-partner wedge. Save one with `make probe-report SERVER=http://target:8001`.
+
 > **Authorization gate.** Because the probe launches real attacks, every request must carry
 > `"authorized": true` — an attestation that you're permitted to security-test the target
 > (unauthorized scanning of third-party servers may be illegal). An **SSRF guard** always blocks
@@ -567,6 +571,8 @@ sentinelmcp/
 - [x] **Observability** — correlation/trace IDs on every log + `X-Request-ID`, Prometheus `/metrics`, Grafana dashboard, structured auth-failure audit
 - [x] **Request hardening** — body-size (413) + request/upstream timeouts (504) on the DoS surface
 - [x] **RBAC / scoped API keys** — `read`/`gateway`/`probe`/`admin` scopes enforced per route; denials audited (403 + metric); legacy/dev keys stay fully scoped
+- [x] **Shareable probe report** — branded, print-to-PDF HTML assessment (`format:"html"` / `make probe-report`) — the design-partner wedge
+- [x] **Signals dashboard** — drift, context-oversharing, and closed-loop hardening surfaced live (`/gateway/signals` + dashboard "Signals" tab)
 - [ ] Managed cloud / Railway live demo URL
 - [ ] SOC 2 Type II (Vanta) — in progress
 - [ ] Expanded probe set (command injection, auth bypass, tool-shadowing)

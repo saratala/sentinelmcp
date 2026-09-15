@@ -106,6 +106,14 @@ async def test_drift_endpoint(client):
 
 
 @pytest.mark.asyncio
+async def test_signals_endpoint(client):
+    r = await client.get("/gateway/signals", headers=KEY)
+    assert r.status_code == 200
+    body = r.json()
+    assert "drift" in body and "oversharing" in body and "hardening" in body
+
+
+@pytest.mark.asyncio
 async def test_exposure_endpoint(client):
     r = await client.get("/gateway/exposure/some-session", headers=KEY)
     assert r.status_code == 200

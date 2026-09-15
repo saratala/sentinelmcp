@@ -40,6 +40,7 @@ class ProbeRequest(BaseModel):
     timeout_secs: int = 10
     harden: bool = False   # close the loop: synthesize live defenses from findings
     authorized: bool = False   # caller attests they are authorized to test this target
+    format: str = "json"   # "json" | "html" — html returns a shareable branded report
 
 
 class ProbeReport(BaseModel):
@@ -513,7 +514,7 @@ async def run_probe(
         }
         hardening = harden_from_report(report_dict)
 
-    return ProbeReport(
+    report = ProbeReport(
         server_url=body.server_url,
         tested_at=datetime.now(timezone.utc).isoformat(),
         total_attacks=len(clean_findings),
@@ -525,3 +526,11 @@ async def run_probe(
         owasp_coverage=owasp_ids,
         hardening=hardening,
     )
+
+    # Shareable branded HTML report (the GTM artifact) when format=html.
+    if body.format == "html":
+        from fastapi.responses import HTMLResponse
+        from app.gateway.probe_report import render_probe_report
+        return HTMLResponse(render_probe_report(report.model_dump()))
+
+    return report

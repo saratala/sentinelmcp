@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import ThreatFeed from './pages/ThreatFeed'
+import Signals from './pages/Signals'
 import Inventory from './pages/Inventory'
 import Latency from './pages/Latency'
 import { api } from './api'
@@ -24,6 +25,7 @@ export default function App() {
       <main className="flex flex-1">
         <Routes>
           <Route path="/"          element={<ThreatFeed />} />
+          <Route path="/signals"   element={<Signals />} />
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/latency"   element={<Latency />} />
         </Routes>

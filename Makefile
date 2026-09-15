@@ -39,6 +39,13 @@ probe:  ## Run security probe against SERVER= (e.g. make probe SERVER=http://loc
 demo-closed-loop:  ## Run the closed-loop hardening demo (needs `make demo` stack up)
 	PYTHONPATH=. .venv/bin/python demo/closed_loop_demo.py
 
+probe-report:  ## Scan SERVER= and save a shareable HTML report to probe-report.html
+	@curl -s -X POST http://localhost:8888/probe \
+	  -H "X-Sentinel-Key: $${SENTINEL_API_KEY:-dev-key-123}" \
+	  -H "Content-Type: application/json" \
+	  -d '{"server_url":"$(SERVER)","attacks":["all"],"authorized":true,"format":"html"}' \
+	  -o probe-report.html && echo "Saved probe-report.html — open it and File → Print → Save as PDF"
+
 harden:  ## Probe SERVER= and auto-synthesize live defenses from confirmed findings (closed loop)
 	@curl -s -X POST http://localhost:8888/probe \
 	  -H "X-Sentinel-Key: $${SENTINEL_API_KEY:-dev-key-123}" \
