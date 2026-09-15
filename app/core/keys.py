@@ -29,6 +29,16 @@ def _hash(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _cache_value(tenant_id: str, label: str, scopes: Optional[list[str]]) -> str:
+    """JSON metadata stored in the Redis key cache (parsed by require_api_key)."""
+    import json
+    from app.core.auth import ALL_SCOPES
+    return json.dumps({
+        "tenant_id": tenant_id, "label": label,
+        "scopes": list(scopes) if scopes else list(ALL_SCOPES),
+    })
+
+
 async def create_key(
     db: AsyncSession,
     redis,
@@ -37,10 +47,12 @@ async def create_key(
     tenant_id: str,
     rate_limit_per_min: int = 600,
     expires_at: Optional[datetime] = None,
+    scopes: Optional[list[str]] = None,
 ) -> tuple[str, ApiKey]:
     """Generate a new API key, persist its hash, return (raw_key, ApiKey row).
 
     The raw_key is shown only once. Store it in your secrets manager.
+    ``scopes`` limits what the key can do (defaults to all scopes).
     """
     raw = f"sk-{secrets.token_urlsafe(32)}"
     key_hash = _hash(raw)
@@ -58,11 +70,12 @@ async def create_key(
     db.add(row)
     await db.flush()
 
-    # Cache in Redis for fast lookup
+    # Cache in Redis for fast lookup (JSON metadata incl. scopes).
     await redis.setex(f"apikey:{key_hash}", _REDIS_TTL,
-                      f"{tenant_id}:{label}")
+                      _cache_value(tenant_id, label, scopes))
 
-    log.info("api_key_created", tenant=tenant_id, label=label, prefix=prefix)
+    log.info("api_key_created", tenant=tenant_id, label=label, prefix=prefix,
+             scopes=scopes or "all")
     return raw, row
 
 
@@ -112,11 +125,17 @@ async def validate_key(
     """
     key_hash = _hash(raw_key)
 
-    # Fast path — Redis cache
+    # Fast path — Redis cache (JSON metadata; tolerate the legacy "tenant:label")
     cached = await redis.get(f"apikey:{key_hash}")
     if cached:
-        tenant_id = cached.split(":")[0]
-        return tenant_id
+        import json
+        try:
+            meta = json.loads(cached)
+            if isinstance(meta, dict):
+                return meta.get("tenant_id")
+        except (ValueError, TypeError):
+            pass
+        return cached.split(":")[0]
 
     # Slow path — Postgres
     result = await db.execute(
@@ -140,6 +159,6 @@ async def validate_key(
         .values(last_used_at=datetime.now(timezone.utc))
     )
     await redis.setex(f"apikey:{key_hash}", _REDIS_TTL,
-                      f"{row.tenant_id}:{row.label}")
+                      _cache_value(row.tenant_id, row.label, None))
 
     return row.tenant_id

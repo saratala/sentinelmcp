@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app.core.allowlist import ServerAllowlist
-from app.core.auth import require_api_key
+from app.core.auth import require_api_key, require_scope
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.core.threat_log import log_threat
@@ -322,7 +322,7 @@ async def get_allowlist(request: Request) -> dict:
     }
 
 
-@router.post("/allowlist", dependencies=[Depends(require_api_key)])
+@router.post("/allowlist", dependencies=[Depends(require_scope("admin"))])
 async def add_to_allowlist(request: Request, body: dict) -> dict:
     """Add an MCP server URL to the allowlist."""
     server_url = body.get("server_url", "").strip()
@@ -333,7 +333,7 @@ async def add_to_allowlist(request: Request, body: dict) -> dict:
     return {"added": server_url, "total": await al.count()}
 
 
-@router.delete("/allowlist", dependencies=[Depends(require_api_key)])
+@router.delete("/allowlist", dependencies=[Depends(require_scope("admin"))])
 async def remove_from_allowlist(request: Request, body: dict) -> dict:
     """Remove an MCP server URL from the allowlist."""
     server_url = body.get("server_url", "").strip()

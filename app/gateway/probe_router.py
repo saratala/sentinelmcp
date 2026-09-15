@@ -16,7 +16,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, HttpUrl
 
-from app.core.auth import require_api_key
+from app.core.auth import AuthContext, require_api_key, require_scope
 from app.core.rate_limit import limiter, probe_limit
 
 log = structlog.get_logger(__name__)
@@ -402,7 +402,7 @@ async def list_attacks() -> dict:
 async def run_probe(
     request: Request,
     body: ProbeRequest,
-    tenant_id: str = Depends(require_api_key),
+    _auth: AuthContext = Depends(require_scope("probe")),
 ) -> ProbeReport:
     """Run penetration test probes against a target MCP server.
 
@@ -426,7 +426,7 @@ async def run_probe(
     from app.core.target_guard import check_probe_target
 
     if settings.probe_require_authorization and not body.authorized:
-        log.warning("probe_unauthorized", server_url=body.server_url, tenant=tenant_id)
+        log.warning("probe_unauthorized", server_url=body.server_url, tenant=_auth.tenant_id)
         raise HTTPException(
             status_code=403,
             detail=("Probing requires authorization: set \"authorized\": true to attest you "
@@ -438,11 +438,11 @@ async def run_probe(
         body.server_url, block_private=settings.probe_block_private_targets)
     if not allowed:
         log.warning("probe_target_blocked", server_url=body.server_url,
-                    reason=reason, tenant=tenant_id)
+                    reason=reason, tenant=_auth.tenant_id)
         raise HTTPException(status_code=400, detail=f"Probe target blocked: {reason}.")
 
     log.info("probe_started", server_url=body.server_url, attacks=attacks,
-             tenant=tenant_id, authorized=body.authorized)
+             tenant=_auth.tenant_id, authorized=body.authorized)
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         tasks = [
@@ -500,7 +500,7 @@ async def run_probe(
         risk_level=risk_level,
         risk_score=risk_score,
         vulnerabilities=len(vulnerable),
-        tenant=tenant_id,
+        tenant=_auth.tenant_id,
     )
 
     # ── Closed loop: synthesize live defenses from confirmed findings ─────────

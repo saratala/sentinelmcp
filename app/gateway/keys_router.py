@@ -13,7 +13,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app.core.auth import require_api_key
+from app.core.auth import ALL_SCOPES, require_scope
 from app.core.database import get_db
 from app.core.keys import create_key, list_keys, revoke_key
 from app.core.policy_engine import get_policy_engine
@@ -28,6 +28,7 @@ class CreateKeyRequest(BaseModel):
     tenant_id: str
     rate_limit_per_min: int = 600
     expires_at: Optional[str] = None   # ISO-8601
+    scopes: Optional[list[str]] = None  # RBAC scopes; defaults to all
 
 
 class CreateKeyResponse(BaseModel):
@@ -36,16 +37,17 @@ class CreateKeyResponse(BaseModel):
     prefix: str
     tenant_id: str
     label: str
+    scopes: list[str]
     warning: str = "Store this key securely. It will not be shown again."
 
 
-@router.post("", dependencies=[Depends(require_api_key)])
+@router.post("", dependencies=[Depends(require_scope("admin"))])
 @limiter.limit("10/minute")
 async def create_api_key(
     request: Request,
     body: CreateKeyRequest,
 ) -> CreateKeyResponse:
-    """Create a new per-tenant API key. Returns the raw key exactly once."""
+    """Create a new per-tenant API key with RBAC scopes. Returns the raw key once."""
     from datetime import datetime
     expires_at = None
     if body.expires_at:
@@ -53,6 +55,13 @@ async def create_api_key(
             expires_at = datetime.fromisoformat(body.expires_at.replace("Z", "+00:00"))
         except ValueError:
             raise HTTPException(status_code=400, detail="expires_at must be ISO-8601")
+
+    scopes = body.scopes
+    if scopes is not None:
+        invalid = [s for s in scopes if s not in ALL_SCOPES]
+        if invalid:
+            raise HTTPException(status_code=400,
+                                detail=f"Invalid scopes: {invalid}. Valid: {list(ALL_SCOPES)}")
 
     redis = request.app.state.redis
     async for db in get_db():
@@ -62,6 +71,7 @@ async def create_api_key(
             tenant_id=body.tenant_id,
             rate_limit_per_min=body.rate_limit_per_min,
             expires_at=expires_at,
+            scopes=scopes,
         )
         return CreateKeyResponse(
             api_key=raw_key,
@@ -69,10 +79,11 @@ async def create_api_key(
             prefix=row.key_prefix,
             tenant_id=row.tenant_id,
             label=row.label,
+            scopes=scopes if scopes is not None else list(ALL_SCOPES),
         )
 
 
-@router.get("", dependencies=[Depends(require_api_key)])
+@router.get("", dependencies=[Depends(require_scope("admin"))])
 @limiter.limit("30/minute")
 async def list_api_keys(
     request: Request,
@@ -100,7 +111,7 @@ async def list_api_keys(
         }
 
 
-@router.delete("/{key_id}", dependencies=[Depends(require_api_key)])
+@router.delete("/{key_id}", dependencies=[Depends(require_scope("admin"))])
 @limiter.limit("10/minute")
 async def revoke_api_key(
     request: Request,
@@ -115,7 +126,7 @@ async def revoke_api_key(
         return {"revoked": key_id, "status": "inactive"}
 
 
-@router.get("/policy", dependencies=[Depends(require_api_key)])
+@router.get("/policy", dependencies=[Depends(require_scope("admin"))])
 async def list_policy_rules(request: Request) -> dict:
     """List all loaded policy rules — useful for debugging YAML changes."""
     engine = get_policy_engine()

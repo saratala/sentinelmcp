@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.alerts import fire_alert
-from app.core.auth import AuthContext, require_api_key
+from app.core.auth import AuthContext, require_api_key, require_scope
 from app.core.database import get_db, get_read_db
 from app.core.rate_limit import limiter
 from app.core.threat_log import get_recent_threats, log_threat
@@ -217,7 +217,7 @@ async def reset_circuit(
     request: Request,
     session_id: str,
     circuit_breaker: CircuitBreaker = Depends(get_circuit_breaker),
-    _auth: AuthContext = Depends(require_api_key),
+    _auth: AuthContext = Depends(require_scope("admin")),
 ) -> dict:
     """Manually reset a session's circuit breaker after admin review."""
     await circuit_breaker.reset(session_id)

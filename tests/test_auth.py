@@ -130,9 +130,12 @@ async def test_provisioned_key_accepted(client, redis_client):
 
 @pytest.mark.asyncio
 async def test_provision_key_stores_hash(redis_client):
+    import json
     raw_key = await provision_key(redis_client, "acme-corp")
     stored = await redis_client.get(f"apikey:{_hash_key(raw_key)}")
-    assert stored == "acme-corp"
+    meta = json.loads(stored)
+    assert meta["label"] == "acme-corp"
+    assert set(meta["scopes"]) == {"read", "gateway", "probe", "admin"}
 
 
 @pytest.mark.asyncio

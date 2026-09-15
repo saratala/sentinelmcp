@@ -13,10 +13,21 @@ from dataclasses import dataclass
 from typing import Optional
 
 import structlog
-from fastapi import Header, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 
 from app.config import settings
+
+
+from dataclasses import field
+
+# ── Role-based access control ────────────────────────────────────────────────
+# Scopes attached to an API key. "admin" implies every other scope.
+#   read    — read-only endpoints (registry, threats, inventory, drift, exposure)
+#   gateway — validate/invoke/proxy/adapters (the data path)
+#   probe   — the active red-team probe
+#   admin   — key management, allowlist, circuit-breaker reset (privileged ops)
+ALL_SCOPES: tuple[str, ...] = ("read", "gateway", "probe", "admin")
 
 
 @dataclass
@@ -31,10 +42,19 @@ class AuthContext:
     known (single-tenant / dev setups) and is the JWT ``sub`` / ``tenant_id``
     claim for Bearer JWT requests.  Query code should only filter by
     ``tenant_id`` when it is not ``None``.
+
+    ``scopes`` is the set of RBAC scopes granted to the key. Legacy keys and the
+    dev/env key default to all scopes for backwards compatibility.
     """
 
     key: str
     tenant_id: Optional[str] = None
+    scopes: list[str] = field(default_factory=lambda: list(ALL_SCOPES))
+
+    def has_scope(self, scope: str) -> bool:
+        """True if this identity holds ``scope`` (admin implies everything)."""
+        return "admin" in self.scopes or scope in self.scopes
+
 
 log = structlog.get_logger(__name__)
 
@@ -164,18 +184,23 @@ async def require_api_key(
         stored = await redis.get(f"apikey:{key_hash}")
         if stored:
             tenant_id: Optional[str] = None
+            # Legacy keys were plain strings and carry no scopes → grant all
+            # (backwards compatible; only keys created WITH scopes are limited).
+            scopes: list[str] = list(ALL_SCOPES)
             try:
                 import json as _json
                 meta = _json.loads(stored)
                 if isinstance(meta, dict):
                     tenant_id = meta.get("tenant_id") or None
+                    if isinstance(meta.get("scopes"), list) and meta["scopes"]:
+                        scopes = [str(s) for s in meta["scopes"]]
             except (ValueError, TypeError):
-                pass  # plain label string — no tenant
-            return AuthContext(key=x_sentinel_key, tenant_id=tenant_id)
+                pass  # plain label string — legacy key, all scopes
+            return AuthContext(key=x_sentinel_key, tenant_id=tenant_id, scopes=scopes)
 
-    # Fall back to the env-var dev key.
+    # Fall back to the env-var dev key — the admin bootstrap key (all scopes).
     if _DEV_KEY_HASH and secrets.compare_digest(key_hash, _DEV_KEY_HASH):
-        return AuthContext(key=x_sentinel_key, tenant_id=None)
+        return AuthContext(key=x_sentinel_key, tenant_id=None, scopes=list(ALL_SCOPES))
 
     _record_auth_failure(request, "invalid_api_key", key_prefix=x_sentinel_key[:8] + "...")
     raise HTTPException(
@@ -184,14 +209,40 @@ async def require_api_key(
     )
 
 
-async def provision_key(redis, label: str) -> str:
-    """Generate a new API key, store its hash in Redis, and return the raw key.
+def require_scope(*required: str):
+    """Dependency factory enforcing that the caller holds one of ``required``.
+
+    Usage:
+        @router.post("", dependencies=[Depends(require_scope("admin"))])
+        async def handler(_auth: AuthContext = Depends(require_scope("probe"))): ...
+
+    Denials are audited (structured ``auth_failure`` event + metric) and return
+    403. ``admin`` satisfies any requirement.
+    """
+    async def _dep(request: Request,
+                   ctx: AuthContext = Depends(require_api_key)) -> AuthContext:
+        if not any(ctx.has_scope(s) for s in required):
+            _record_auth_failure(
+                request, f"missing_scope:{'|'.join(required)}",
+                key_prefix=(ctx.key or "")[:8])
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient scope — requires one of: {list(required)}",
+            )
+        return ctx
+    return _dep
+
+
+async def provision_key(redis, label: str, scopes: Optional[list[str]] = None) -> str:
+    """Generate a new API key, store its hash + scopes in Redis, return the raw key.
 
     Call this once per customer during onboarding. The raw key is shown only
-    once — store it securely.
+    once — store it securely. ``scopes`` defaults to all scopes.
     """
+    import json as _json
     raw_key = f"sk-{secrets.token_urlsafe(32)}"
     key_hash = _hash_key(raw_key)
-    await redis.set(f"apikey:{key_hash}", label)
-    log.info("api_key_provisioned", label=label)
+    meta = {"label": label, "scopes": list(scopes) if scopes else list(ALL_SCOPES)}
+    await redis.set(f"apikey:{key_hash}", _json.dumps(meta))
+    log.info("api_key_provisioned", label=label, scopes=meta["scopes"])
     return raw_key

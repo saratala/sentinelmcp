@@ -210,14 +210,19 @@ class AsyncSentinelClient:
         self._raise_for_status(resp)
         return resp.json()
 
-    async def create_key(self, label: str, tenant_id: str, rate_limit_per_min: int = 600) -> dict:
-        """Create a new per-tenant API key. Returns the raw key once — store it securely."""
+    async def create_key(self, label: str, tenant_id: str, rate_limit_per_min: int = 600,
+                          scopes: Optional[list[str]] = None) -> dict:
+        """Create a new per-tenant API key. Returns the raw key once — store it securely.
+
+        scopes: RBAC scopes ("read", "gateway", "probe", "admin"); None = all.
+        Requires an admin-scoped caller.
+        """
         client = await self._get_client()
-        resp = await client.post("/keys", json={
-            "label": label,
-            "tenant_id": tenant_id,
-            "rate_limit_per_min": rate_limit_per_min,
-        })
+        payload = {"label": label, "tenant_id": tenant_id,
+                   "rate_limit_per_min": rate_limit_per_min}
+        if scopes is not None:
+            payload["scopes"] = scopes
+        resp = await client.post("/keys", json=payload)
         self._raise_for_status(resp)
         return resp.json()
 
@@ -288,5 +293,6 @@ class SentinelClient:
     def health(self) -> dict:
         return self._run(self._async.health())
 
-    def create_key(self, label: str, tenant_id: str, rate_limit_per_min: int = 600) -> dict:
-        return self._run(self._async.create_key(label, tenant_id, rate_limit_per_min))
+    def create_key(self, label: str, tenant_id: str, rate_limit_per_min: int = 600,
+                   scopes: Optional[list[str]] = None) -> dict:
+        return self._run(self._async.create_key(label, tenant_id, rate_limit_per_min, scopes))

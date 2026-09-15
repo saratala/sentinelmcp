@@ -438,13 +438,35 @@ All routes require `X-Sentinel-Key` unless noted.
 **Keys, auth & adapters** — `keys_router.py` · `auth_router.py` · `adapters_router.py`
 | Method | Path | Purpose |
 |---|---|---|
-| `POST/GET/DELETE` | `/keys` | Per-tenant API key management |
-| `GET` | `/keys/policy` | Current key/rate-limit policy |
+| `POST/GET/DELETE` | `/keys` | Per-tenant API key management *(admin scope)* |
+| `GET` | `/keys/policy` | Current key/rate-limit policy *(admin scope)* |
 | `GET` | `/auth/jwks`, `/auth/status` | JWKS + auth mode *(open)* |
 | `POST/GET/DELETE` | `/adapters/rest/*` | Register/gate REST+OpenAPI services |
 | `POST/GET` | `/adapters/a2a/*` | Register/gate agent-to-agent endpoints |
 
 Full interactive docs at `http://localhost:8888/docs`.
+
+### RBAC — scoped API keys
+
+Keys carry **scopes** that gate what they can do; `admin` implies all. Create a
+narrowly-scoped key (an admin-only operation):
+
+```bash
+curl -X POST http://localhost:8888/keys \
+  -H "X-Sentinel-Key: <admin-key>" -H "Content-Type: application/json" \
+  -d '{"label":"ci-scanner","tenant_id":"acme","scopes":["probe"]}'
+```
+
+| Scope | Grants |
+|---|---|
+| `read` | read-only endpoints (registry, threats, inventory, drift, exposure, explain) |
+| `gateway` | the data path (validate / invoke / proxy / adapters) |
+| `probe` | the active red-team probe (`/probe`) |
+| `admin` | key management, allowlist mutation, circuit-breaker reset (implies all) |
+
+A scope denial returns **403** and is recorded as an `auth_failure` (structured log +
+`sentinelmcp_auth_failures_total{reason="missing_scope:…"}`). The dev/env key and any
+legacy pre-RBAC keys are treated as fully scoped, so existing deployments are unaffected.
 
 ---
 
@@ -544,6 +566,7 @@ sentinelmcp/
 - [x] **Rate-limit tuning** — per-API-key limits, env-configurable, optional Redis-backed shared storage for HA
 - [x] **Observability** — correlation/trace IDs on every log + `X-Request-ID`, Prometheus `/metrics`, Grafana dashboard, structured auth-failure audit
 - [x] **Request hardening** — body-size (413) + request/upstream timeouts (504) on the DoS surface
+- [x] **RBAC / scoped API keys** — `read`/`gateway`/`probe`/`admin` scopes enforced per route; denials audited (403 + metric); legacy/dev keys stay fully scoped
 - [ ] Managed cloud / Railway live demo URL
 - [ ] SOC 2 Type II (Vanta) — in progress
 - [ ] Expanded probe set (command injection, auth bypass, tool-shadowing)
