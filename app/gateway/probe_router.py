@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, HttpUrl
 
 from app.core.auth import require_api_key
-from app.core.rate_limit import limiter
+from app.core.rate_limit import limiter, probe_limit
 
 log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/probe", tags=["probe"])
@@ -39,6 +39,7 @@ class ProbeRequest(BaseModel):
     attacks: list[str] = ["all"]
     timeout_secs: int = 10
     harden: bool = False   # close the loop: synthesize live defenses from findings
+    authorized: bool = False   # caller attests they are authorized to test this target
 
 
 class ProbeReport(BaseModel):
@@ -397,7 +398,7 @@ async def list_attacks() -> dict:
 
 
 @router.post("")
-@limiter.limit("5/minute")
+@limiter.limit(probe_limit)
 async def run_probe(
     request: Request,
     body: ProbeRequest,
@@ -418,7 +419,30 @@ async def run_probe(
     if invalid:
         raise HTTPException(400, detail=f"Unknown attacks: {invalid}. Valid: {ALL_ATTACKS}")
 
-    log.info("probe_started", server_url=body.server_url, attacks=attacks, tenant=tenant_id)
+    # ── Authorization gate ───────────────────────────────────────────────────
+    # The probe launches real attacks; the caller must attest they are authorized
+    # to test the target, and the target must pass the SSRF/metadata guard.
+    from app.config import settings
+    from app.core.target_guard import check_probe_target
+
+    if settings.probe_require_authorization and not body.authorized:
+        log.warning("probe_unauthorized", server_url=body.server_url, tenant=tenant_id)
+        raise HTTPException(
+            status_code=403,
+            detail=("Probing requires authorization: set \"authorized\": true to attest you "
+                    "are permitted to security-test this target. Unauthorized scanning may "
+                    "be illegal."),
+        )
+
+    allowed, reason = check_probe_target(
+        body.server_url, block_private=settings.probe_block_private_targets)
+    if not allowed:
+        log.warning("probe_target_blocked", server_url=body.server_url,
+                    reason=reason, tenant=tenant_id)
+        raise HTTPException(status_code=400, detail=f"Probe target blocked: {reason}.")
+
+    log.info("probe_started", server_url=body.server_url, attacks=attacks,
+             tenant=tenant_id, authorized=body.authorized)
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         tasks = [

@@ -143,13 +143,21 @@ probes today, each mapped to OWASP LLM Top 10:
 curl -X POST http://localhost:8888/probe \
   -H "X-Sentinel-Key: dev-key-123" \
   -H "Content-Type: application/json" \
-  -d '{"server_url":"http://target-mcp-server:8001","attacks":["all"]}'
+  -d '{"server_url":"http://target-mcp-server:8001","attacks":["all"],"authorized":true}'
 
 # or, if the stack is up:  make probe SERVER=http://target-mcp-server:8001
 ```
 
 You get back a `risk_score` (0–10), a `risk_level` (SAFE→CRITICAL), and per-attack findings with
-severity, evidence, and remediation. Rate-limited to 5/min because probing is expensive.
+severity, evidence, and remediation. Rate-limited (tunable via `SENTINEL_RATE_LIMIT_PROBE`) because
+probing is expensive.
+
+> **Authorization gate.** Because the probe launches real attacks, every request must carry
+> `"authorized": true` — an attestation that you're permitted to security-test the target
+> (unauthorized scanning of third-party servers may be illegal). An **SSRF guard** always blocks
+> cloud-metadata/link-local targets, and optionally private/loopback ranges
+> (`SENTINEL_PROBE_BLOCK_PRIVATE_TARGETS=true` for internet-facing SaaS; left off for in-VPC
+> scanning of internal servers).
 
 ### 2. Pre-flight analysis — vet an agent's plan (`POST /proxy/analyze`)
 
@@ -195,7 +203,7 @@ SentinelMCP is the only gateway that owns *both* an offensive probe *and* a defe
 ```bash
 curl -X POST http://localhost:8888/probe \
   -H "X-Sentinel-Key: dev-key-123" -H "Content-Type: application/json" \
-  -d '{"server_url":"http://target:8001","attacks":["all"],"harden":true}'
+  -d '{"server_url":"http://target:8001","attacks":["all"],"harden":true,"authorized":true}'
 # → report.hardening: { advisories_created: [...], rules_installed: [...] }
 ```
 
@@ -517,6 +525,8 @@ sentinelmcp/
 - [x] **Context-oversharing meter** (OWASP MCP10) — sensitive-egress accounting per destination
 - [x] **Production preflight** — refuses to boot with insecure defaults (dev key, wildcard CORS, disabled auth); configurable CORS origins
 - [x] **False-positive discipline** — 0% FP on a benign-tool corpus; end-to-end app tests; fixed a ReDoS DoS on non-ASCII output
+- [x] **Probe authorization gate** — required authorization attestation + SSRF/cloud-metadata target guard
+- [x] **Rate-limit tuning** — per-API-key limits, env-configurable, optional Redis-backed shared storage for HA
 - [ ] Managed cloud / Railway live demo URL
 - [ ] SOC 2 Type II (Vanta) — in progress
 - [ ] Expanded probe set (command injection, auth bypass, tool-shadowing)

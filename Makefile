@@ -34,7 +34,7 @@ probe:  ## Run security probe against SERVER= (e.g. make probe SERVER=http://loc
 	@curl -s -X POST http://localhost:8888/probe \
 	  -H "X-Sentinel-Key: $${SENTINEL_API_KEY:-dev-key-123}" \
 	  -H "Content-Type: application/json" \
-	  -d '{"server_url":"$(SERVER)","attacks":["all"]}' | python3 -m json.tool
+	  -d '{"server_url":"$(SERVER)","attacks":["all"],"authorized":true}' | python3 -m json.tool
 
 demo-closed-loop:  ## Run the closed-loop hardening demo (needs `make demo` stack up)
 	PYTHONPATH=. .venv/bin/python demo/closed_loop_demo.py
@@ -43,7 +43,7 @@ harden:  ## Probe SERVER= and auto-synthesize live defenses from confirmed findi
 	@curl -s -X POST http://localhost:8888/probe \
 	  -H "X-Sentinel-Key: $${SENTINEL_API_KEY:-dev-key-123}" \
 	  -H "Content-Type: application/json" \
-	  -d '{"server_url":"$(SERVER)","attacks":["all"],"harden":true}' | python3 -m json.tool
+	  -d '{"server_url":"$(SERVER)","attacks":["all"],"harden":true,"authorized":true}' | python3 -m json.tool
 
 report:  ## Show compliance report (PCI DSS + SOC2)
 	@curl -s http://localhost:8888/gateway/compliance/report \

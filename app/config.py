@@ -20,12 +20,25 @@ class Settings(BaseSettings):
     api_key: str = "dev-key-123"          # override via SENTINEL_API_KEY in production
     auth_enabled: bool = True             # set SENTINEL_AUTH_ENABLED=false for local dev
 
+    # Active probe safety — the probe attacks a caller-supplied target.
+    probe_require_authorization: bool = True   # require an explicit authorization attestation
+    probe_block_private_targets: bool = False  # block RFC1918/loopback (on for SaaS; off in-VPC)
+
     # Redis — set SENTINEL_REDIS_PASSWORD in production (non-empty enables AUTH)
     redis_url: str = "redis://localhost:6379/0"
     redis_password: str = ""   # SENTINEL_REDIS_PASSWORD
 
     # PostgreSQL
     postgres_url: str = "postgresql+asyncpg://sentinel:sentinel@localhost/sentinelmcp"
+
+    # Rate limiting (slowapi). Keyed by API key, falling back to client IP.
+    rate_limit_enabled: bool = True            # SENTINEL_RATE_LIMIT_ENABLED
+    # Backing store. Empty = in-memory (per-process). Set to a Redis URI to share
+    # limits across gateway instances (required for correct HA rate limiting),
+    # e.g. redis://:password@redis:6379/2
+    rate_limit_storage_uri: str = ""           # SENTINEL_RATE_LIMIT_STORAGE_URI
+    rate_limit_default: str = "300/minute"     # SENTINEL_RATE_LIMIT_DEFAULT
+    rate_limit_probe: str = "5/minute"         # SENTINEL_RATE_LIMIT_PROBE — probing is expensive
 
     # Layer 1 — schema cache
     schema_signing_secret: str = ""        # SENTINEL_SCHEMA_SIGNING_SECRET — HMAC key for attestation

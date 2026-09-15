@@ -55,7 +55,8 @@ def count_auto_advisories(client: httpx.Client) -> int:
 
 def probe(client: httpx.Client, harden: bool) -> dict:
     r = client.post(f"{GATEWAY}/probe", headers=H, timeout=60,
-                    json={"server_url": VULN, "attacks": ["all"], "harden": harden})
+                    json={"server_url": VULN, "attacks": ["all"], "harden": harden,
+                          "authorized": True})
     r.raise_for_status()
     return r.json()
 

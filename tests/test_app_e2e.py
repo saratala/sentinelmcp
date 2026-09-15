@@ -110,6 +110,25 @@ async def test_exposure_endpoint(client):
 
 
 @pytest.mark.asyncio
+async def test_probe_requires_authorization(client):
+    """Probing without the authorization attestation is refused (403)."""
+    r = await client.post("/probe", headers=KEY,
+                          json={"server_url": "https://target.example.com", "attacks": ["all"]})
+    assert r.status_code == 403
+    assert "authoriz" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_probe_blocks_metadata_target(client):
+    """Even when authorized, the SSRF guard blocks cloud-metadata targets (400)."""
+    r = await client.post("/probe", headers=KEY, json={
+        "server_url": "http://169.254.169.254/latest/meta-data/",
+        "attacks": ["all"], "authorized": True})
+    assert r.status_code == 400
+    assert "blocked" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_threat_explain_endpoint(client):
     r = await client.get("/gateway/threats/explain", headers=KEY,
                          params={"threat_type": "TOOL_POISONING"})

@@ -146,6 +146,8 @@ class AsyncSentinelClient:
         server_url: str,
         attacks: Optional[list[str]] = None,
         timeout_secs: int = 10,
+        authorized: bool = True,
+        harden: bool = False,
     ) -> dict:
         """Run a penetration test against an MCP server.
 
@@ -153,6 +155,12 @@ class AsyncSentinelClient:
             server_url: Target MCP server URL.
             attacks: List of attack types, or ["all"] for all attacks.
             timeout_secs: Per-probe timeout.
+            authorized: Attest you are authorized to security-test this target.
+                The gateway rejects probes without it. Unauthorized scanning of
+                third-party servers may be illegal — only set True for targets
+                you own or have written permission to test.
+            harden: Close the loop — synthesize live gateway defenses from
+                confirmed findings.
 
         Returns:
             ProbeReport dict with findings, risk score, and recommendations.
@@ -162,6 +170,8 @@ class AsyncSentinelClient:
             "server_url": server_url,
             "attacks": attacks or ["all"],
             "timeout_secs": timeout_secs,
+            "authorized": authorized,
+            "harden": harden,
         }
         resp = await client.post("/probe", json=payload)
         self._raise_for_status(resp)
@@ -265,8 +275,9 @@ class SentinelClient:
     def report(self, days: int = 30) -> dict:
         return self._run(self._async.report(days))
 
-    def probe(self, server_url: str, attacks: Optional[list[str]] = None, timeout_secs: int = 10) -> dict:
-        return self._run(self._async.probe(server_url, attacks, timeout_secs))
+    def probe(self, server_url: str, attacks: Optional[list[str]] = None, timeout_secs: int = 10,
+              authorized: bool = True, harden: bool = False) -> dict:
+        return self._run(self._async.probe(server_url, attacks, timeout_secs, authorized, harden))
 
     def threats(self, days: int = 7, threat_type: Optional[str] = None, limit: int = 100) -> dict:
         return self._run(self._async.threats(days, threat_type, limit))
