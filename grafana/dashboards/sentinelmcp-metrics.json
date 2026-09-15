@@ -1,0 +1,88 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "title": "SentinelMCP — Live Metrics (Prometheus)",
+  "uid": "sentinelmcp-metrics",
+  "tags": ["sentinelmcp", "security"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "15s",
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "stat", "title": "Threats detected (rate/5m)",
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(rate(sentinelmcp_threats_total[5m]))", "legendFormat": "threats/s"}]
+    },
+    {
+      "type": "stat", "title": "Auth failures (rate/5m)",
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [
+        {"color": "green", "value": null}, {"color": "red", "value": 1}]}}},
+      "targets": [{"expr": "sum(rate(sentinelmcp_auth_failures_total[5m]))", "legendFormat": "auth-fail/s"}]
+    },
+    {
+      "type": "stat", "title": "Circuit-breaker trips (5m)",
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(increase(sentinelmcp_circuit_breaker_trips_total[5m]))", "legendFormat": "trips"}]
+    },
+    {
+      "type": "stat", "title": "In-flight requests",
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(sentinelmcp_http_requests_in_flight)", "legendFormat": "in-flight"}]
+    },
+    {
+      "type": "timeseries", "title": "Threats by type (rate/5m)",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (threat_type) (rate(sentinelmcp_threats_total[5m]))", "legendFormat": "{{threat_type}}"}]
+    },
+    {
+      "type": "timeseries", "title": "Threats by layer (rate/5m)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (layer) (rate(sentinelmcp_threats_total[5m]))", "legendFormat": "{{layer}}"}]
+    },
+    {
+      "type": "timeseries", "title": "HTTP request rate by route",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (route) (rate(sentinelmcp_http_requests_total[5m]))", "legendFormat": "{{route}}"}]
+    },
+    {
+      "type": "timeseries", "title": "Request latency p95 (s) by route",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, route) (rate(sentinelmcp_http_request_duration_seconds_bucket[5m])))", "legendFormat": "{{route}}"}]
+    },
+    {
+      "type": "timeseries", "title": "Auth failures by reason",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 21},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (reason) (rate(sentinelmcp_auth_failures_total[5m]))", "legendFormat": "{{reason}}"}]
+    },
+    {
+      "type": "timeseries", "title": "Probe runs by risk level",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 21},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (risk_level) (increase(sentinelmcp_probe_runs_total[15m]))", "legendFormat": "{{risk_level}}"}]
+    },
+    {
+      "type": "timeseries", "title": "Drift · oversharing · rate-limited · rejected",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 21},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum(rate(sentinelmcp_drift_detections_total[5m]))", "legendFormat": "drift"},
+        {"expr": "sum(rate(sentinelmcp_context_oversharing_total[5m]))", "legendFormat": "oversharing"},
+        {"expr": "sum(rate(sentinelmcp_rate_limited_total[5m]))", "legendFormat": "rate-limited"},
+        {"expr": "sum(rate(sentinelmcp_requests_rejected_total[5m]))", "legendFormat": "rejected"}
+      ]
+    }
+  ]
+}

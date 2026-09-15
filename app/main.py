@@ -88,6 +88,9 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Construct and return the FastAPI application."""
+    from app.core.logging import configure_logging
+    configure_logging()
+
     app = FastAPI(
         title="SentinelMCP — AI Agent Security Gateway",
         description="Every tool, verified.",
@@ -98,22 +101,40 @@ def create_app() -> FastAPI:
     from app.core.telemetry import setup_telemetry
     setup_telemetry(app)
 
+    # Innermost-first: CORS, then the request guard, then observability so the
+    # correlation id + metrics wrap every response (including guard rejections).
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+    from app.core.middleware import ObservabilityMiddleware, RequestGuardMiddleware
+    app.add_middleware(RequestGuardMiddleware)
+    app.add_middleware(ObservabilityMiddleware)
 
     # Rate limiter state + 429 handler
     app.state.limiter = limiter
 
     @app.exception_handler(RateLimitExceeded)
     async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+        from app.core import metrics
+        route = getattr(request.scope.get("route"), "path", None) or "unmatched"
+        metrics.rate_limited_total.labels(route).inc()
         return JSONResponse(
             status_code=429,
             content={"detail": f"Rate limit exceeded: {exc.detail}"},
         )
+
+    @app.get("/metrics")
+    async def prometheus_metrics(request: Request):
+        """Prometheus scrape endpoint (open, like /health)."""
+        from fastapi import Response as _Resp
+        from app.core import metrics
+        if not settings.metrics_enabled:
+            return _Resp(status_code=404)
+        body, content_type = metrics.metrics_payload()
+        return _Resp(content=body, media_type=content_type)
 
     app.include_router(gateway_router)
     app.include_router(proxy_router)

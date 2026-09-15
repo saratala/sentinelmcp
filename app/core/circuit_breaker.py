@@ -44,6 +44,9 @@ class CircuitBreaker:
             reason,
             ex=self._ttl,
         )
+        from app.core import metrics
+        layer = reason[:2] if reason[:1] == "L" and reason[1:2].isdigit() else "L?"
+        metrics.circuit_breaker_trips_total.labels(layer).inc()
         log.warning("circuit_breaker_tripped", session=session_id, reason=reason)
 
     async def reset(self, session_id: str) -> None:

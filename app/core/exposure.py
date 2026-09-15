@@ -121,6 +121,8 @@ class ExposureMeter:
         await self._redis.set(key, json.dumps(state), ex=self._ttl)
 
         if result.flagged:
+            from app.core import metrics
+            metrics.oversharing_events_total.inc()
             log.warning("context_oversharing_detected", **result.to_dict())
         return result
 

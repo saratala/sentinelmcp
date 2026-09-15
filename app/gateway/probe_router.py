@@ -491,6 +491,9 @@ async def run_probe(
 
     owasp_ids = list({f.owasp_id for f in clean_findings})
 
+    from app.core import metrics
+    metrics.probe_runs_total.labels(risk_level).inc()
+
     log.warning(
         "probe_complete",
         server_url=body.server_url,

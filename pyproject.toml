@@ -24,6 +24,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi",
     "opentelemetry-instrumentation-redis",
     "opentelemetry-exporter-otlp-proto-grpc",
+    "prometheus-client",
 ]
 
 [project.optional-dependencies]

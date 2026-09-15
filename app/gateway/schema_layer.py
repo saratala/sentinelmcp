@@ -255,6 +255,9 @@ class SchemaLayer:
                      old_hash=cached.get("hash"), new_hash=new_hash)
 
         if drift_signals:
+            from app.core import metrics
+            for _ in drift_signals:
+                metrics.drift_detections_total.inc()
             log.warning("cross_session_drift", server=server_url,
                         drifted_tools=len(drift_signals), signals=drift_signals)
 

@@ -276,6 +276,21 @@ python demo/demo.py
 
 ---
 
+## Observability
+
+Every request and finding is traceable end-to-end.
+
+- **Correlation IDs** — each request gets an `X-Request-ID` (client-supplied or generated), returned in the response and **bound into every structured log line** for that request, alongside the OpenTelemetry `trace_id` when tracing is on. One id ties together the gateway logs, the threat events, and the Jaeger trace for any agent call.
+- **Structured logs** — JSON in production (SIEM-ready), console in dev. Auth failures are audited as dedicated `auth_failure` events (reason, route, client IP, key prefix, request id).
+- **Prometheus metrics** at `GET /metrics` (open, like `/health`): request rate/latency/in-flight per route, plus security counters — `sentinelmcp_threats_total{threat_type,layer,source}`, `auth_failures_total`, `probe_runs_total`, `circuit_breaker_trips_total`, `drift_detections_total`, `context_oversharing_total`, `rate_limited_total`, `requests_rejected_total`.
+- **Dashboards** — `docker-compose --profile observability up -d` starts **Jaeger** (:16686, traces), **Prometheus** (:9090), and wires a **Grafana** dashboard ("SentinelMCP — Live Metrics") for all of the above. Historical findings are also queryable via `GET /gateway/threats` and the Postgres-backed Grafana board.
+
+```bash
+curl http://localhost:8888/metrics | grep sentinelmcp_threats_total
+```
+
+---
+
 ## How someone tests it (step by step)
 
 A new person evaluating SentinelMCP should follow this path — it goes from "is it alive" to
@@ -527,6 +542,8 @@ sentinelmcp/
 - [x] **False-positive discipline** — 0% FP on a benign-tool corpus; end-to-end app tests; fixed a ReDoS DoS on non-ASCII output
 - [x] **Probe authorization gate** — required authorization attestation + SSRF/cloud-metadata target guard
 - [x] **Rate-limit tuning** — per-API-key limits, env-configurable, optional Redis-backed shared storage for HA
+- [x] **Observability** — correlation/trace IDs on every log + `X-Request-ID`, Prometheus `/metrics`, Grafana dashboard, structured auth-failure audit
+- [x] **Request hardening** — body-size (413) + request/upstream timeouts (504) on the DoS surface
 - [ ] Managed cloud / Railway live demo URL
 - [ ] SOC 2 Type II (Vanta) — in progress
 - [ ] Expanded probe set (command injection, auth bypass, tool-shadowing)

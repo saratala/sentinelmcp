@@ -46,6 +46,9 @@ async def log_threat(
     session.add(event)
     await session.flush()
 
+    from app.core import metrics
+    metrics.record_threat(threat.threat_type, layer, source="proxy" if session_id else "gateway")
+
     log.info(
         "threat_logged",
         id=str(event.id),

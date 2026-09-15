@@ -179,6 +179,18 @@ services:
       COLLECTOR_OTLP_ENABLED: "true"
     profiles: ["observability"]
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports:
+      - "9090:9090"     # Prometheus UI
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    depends_on:
+      - api
+    profiles: ["observability"]
+
   # ── High-Availability: Redis Sentinel + Postgres read replica ──────────────
   # Start with: docker compose --profile ha up -d   (or: make ha)
 

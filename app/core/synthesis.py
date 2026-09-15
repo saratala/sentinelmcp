@@ -134,6 +134,12 @@ def harden_from_report(report: dict, persist: bool = True,
             engine.add_rule(arts["rule"], persist=persist)
             rules.append(arts["rule"]["name"])
 
+    from app.core import metrics
+    for _ in advisories:
+        metrics.hardening_synth_total.labels("advisory").inc()
+    for _ in rules:
+        metrics.hardening_synth_total.labels("rule").inc()
+
     log.info("closed_loop_hardening", server=server_url,
              advisories=len(advisories), rules=len(rules))
     return {

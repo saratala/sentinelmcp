@@ -65,6 +65,16 @@ class Settings(BaseSettings):
     otel_endpoint: str = ""          # SENTINEL_OTEL_ENDPOINT e.g. http://localhost:4317
     otel_service_name: str = "sentinelmcp"  # SENTINEL_OTEL_SERVICE_NAME
 
+    # Logging & observability
+    log_level: str = "INFO"          # SENTINEL_LOG_LEVEL
+    log_json: bool = False           # SENTINEL_LOG_JSON — JSON logs (auto-on in production)
+    metrics_enabled: bool = True     # SENTINEL_METRICS_ENABLED — expose /metrics
+
+    # Request hardening (DoS surface)
+    max_request_bytes: int = 5 * 1024 * 1024   # SENTINEL_MAX_REQUEST_BYTES — 413 above this
+    request_timeout_secs: float = 30.0         # SENTINEL_REQUEST_TIMEOUT_SECS — 504 above this
+    upstream_timeout_secs: float = 15.0        # SENTINEL_UPSTREAM_TIMEOUT_SECS — proxy→MCP server
+
     # JWT / OAuth
     jwt_issuer: str = ""             # SENTINEL_JWT_ISSUER
     jwt_audience: str = ""           # SENTINEL_JWT_AUDIENCE

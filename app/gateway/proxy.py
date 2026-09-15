@@ -228,7 +228,8 @@ class MCPProxy:
     async def _forward(self, target_url: str, body: dict) -> dict:
         """Forward a JSON-RPC request to the real MCP server."""
         try:
-            async with httpx.AsyncClient(timeout=PROXY_TIMEOUT) as client:
+            from app.config import settings
+            async with httpx.AsyncClient(timeout=settings.upstream_timeout_secs) as client:
                 resp = await client.post(
                     target_url,
                     json=body,

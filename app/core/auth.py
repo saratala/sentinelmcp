@@ -113,6 +113,20 @@ async def verify_jwt(token: str) -> str:
     return tenant_id  # raw string — caller wraps in AuthContext
 
 
+def _record_auth_failure(request: Request, reason: str, key_prefix: str = "") -> None:
+    """Emit a structured audit event + metric for an auth/authorization failure."""
+    from app.core import metrics
+    route = getattr(request.scope.get("route"), "path", None) or request.url.path
+    client = request.client.host if request.client else "unknown"
+    request_id = getattr(request.state, "request_id", None)
+    log.warning(
+        "auth_failure",
+        reason=reason, route=route, client_ip=client,
+        key_prefix=key_prefix or None, request_id=request_id,
+    )
+    metrics.auth_failures_total.labels(reason, route).inc()
+
+
 async def require_api_key(
     request: Request,
     x_sentinel_key: str = Header(None, alias="X-Sentinel-Key"),
@@ -132,6 +146,7 @@ async def require_api_key(
             token = authorization[len("Bearer "):]
             tenant_id = await verify_jwt(token)
             return AuthContext(key=tenant_id, tenant_id=tenant_id)
+        _record_auth_failure(request, "missing_credentials")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="X-Sentinel-Key header or Bearer token is required",
@@ -162,7 +177,7 @@ async def require_api_key(
     if _DEV_KEY_HASH and secrets.compare_digest(key_hash, _DEV_KEY_HASH):
         return AuthContext(key=x_sentinel_key, tenant_id=None)
 
-    log.warning("invalid_api_key", key_prefix=x_sentinel_key[:8] + "...")
+    _record_auth_failure(request, "invalid_api_key", key_prefix=x_sentinel_key[:8] + "...")
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid API key",
