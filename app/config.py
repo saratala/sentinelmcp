@@ -10,6 +10,12 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="SENTINEL_", env_file=".env", extra="ignore")
 
+    # Deployment — set SENTINEL_ENVIRONMENT=production to enforce the startup
+    # preflight (rejects insecure dev defaults). Anything else = development.
+    environment: str = "development"      # SENTINEL_ENVIRONMENT
+    # CORS allowed origins, comma-separated. "*" is permitted only outside prod.
+    cors_origins: str = "*"               # SENTINEL_CORS_ORIGINS
+
     # Auth
     api_key: str = "dev-key-123"          # override via SENTINEL_API_KEY in production
     auth_enabled: bool = True             # set SENTINEL_AUTH_ENABLED=false for local dev
@@ -78,6 +84,44 @@ class Settings(BaseSettings):
     # When on, a clean-but-suspicious output is re-checked by the LLM off the
     # response path; a positive verdict trips the circuit breaker for the NEXT call.
     output_llm_escalation: bool = False        # SENTINEL_OUTPUT_LLM_ESCALATION
+
+
+    # ── Derived helpers ──────────────────────────────────────────────────────
+    @property
+    def is_production(self) -> bool:
+        return self.environment.strip().lower() in ("production", "prod")
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """Parse the comma-separated CORS origins into a list."""
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()] or ["*"]
+
+
+# Known-insecure defaults that must not survive into production.
+_DEV_API_KEY = "dev-key-123"
+
+
+def production_preflight(s: "Settings") -> list[str]:
+    """Return a list of fatal misconfigurations for a production deployment.
+
+    Empty list ⇒ safe to boot. Non-empty ⇒ the app refuses to start in
+    ``SENTINEL_ENVIRONMENT=production`` so an insecure gateway is never exposed.
+    In development the list is always empty (checks are advisory only).
+    """
+    if not s.is_production:
+        return []
+    errors: list[str] = []
+    if s.api_key == _DEV_API_KEY:
+        errors.append("SENTINEL_API_KEY is still the dev default 'dev-key-123' — set a strong key.")
+    if not s.auth_enabled:
+        errors.append("SENTINEL_AUTH_ENABLED is false in production — auth must be on.")
+    if "*" in s.cors_origin_list:
+        errors.append("SENTINEL_CORS_ORIGINS is '*' in production — pin explicit origins.")
+    if not s.schema_signing_secret:
+        errors.append("SENTINEL_SCHEMA_SIGNING_SECRET is unset — schema attestation is disabled.")
+    if not s.redis_password and s.redis_url.startswith("redis://"):
+        errors.append("SENTINEL_REDIS_PASSWORD is unset and Redis is unencrypted (redis://).")
+    return errors
 
 
 def get_settings() -> Settings:

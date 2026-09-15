@@ -515,6 +515,8 @@ sentinelmcp/
 - [x] **Approval-view fidelity** — invisible-Unicode / tag-block concealment detection
 - [x] **Cross-session / fleet drift detection** — temporal rug-pulls + cross-tenant divergence
 - [x] **Context-oversharing meter** (OWASP MCP10) — sensitive-egress accounting per destination
+- [x] **Production preflight** — refuses to boot with insecure defaults (dev key, wildcard CORS, disabled auth); configurable CORS origins
+- [x] **False-positive discipline** — 0% FP on a benign-tool corpus; end-to-end app tests; fixed a ReDoS DoS on non-ASCII output
 - [ ] Managed cloud / Railway live demo URL
 - [ ] SOC 2 Type II (Vanta) — in progress
 - [ ] Expanded probe set (command injection, auth bypass, tool-shadowing)

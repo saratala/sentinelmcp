@@ -40,7 +40,10 @@ _RAW_PATTERNS: list[tuple[str, str]] = [
     ("dangerous_action_exec",
      r"\b(exec(ute)?|eval|shell|subprocess|os\.system)\s*[\(\[]"),
     ("dangerous_action_privilege",
-     r"\b(grant|revoke|sudo|chmod\s+777|setuid)\b"),
+     # Require a privileged object after grant/revoke so legitimate phrases like
+     # "grant a teammate read access" don't false-positive; keep sudo/chmod/setuid.
+     # No nested unbounded quantifier — avoids catastrophic backtracking (ReDoS).
+     r"\b(grant|revoke)\s+(all\s+)?(privileges?|permissions?|admin(istrator)?|root|superuser)\b|grant\s+all\s+access|\bsudo\b|chmod\s+777|setuid"),
     # IPI: Financial transaction exfiltration (InjecAgent DH gap)
     ("financial_transfer",
      r"\b(transfer|wire|send|withdraw|deposit|pay)\b[^\n]{0,60}\b(account|wallet|bitcoin|btc|usd|eur)\b"),
@@ -86,7 +89,17 @@ def _decode_b64_segments(text: str) -> str:
     return " ".join(decoded_parts)
 
 def _decode_unicode_escapes(text: str) -> str:
-    """Decode \\uXXXX and \\xXX sequences that may hide injection payloads."""
+    """Decode \\uXXXX and \\xXX sequences that may hide injection payloads.
+
+    Only transforms text that actually contains backslash-escape sequences. This
+    is critical: ``unicode_escape`` mangles ordinary non-ASCII (accented) text
+    into ever-changing mojibake, and because the caller recursively re-scans the
+    decoded output, that would cause runaway recursion / a DoS hang on any tool
+    text containing characters like "é" or "¿". Returning the text unchanged when
+    no escapes are present makes the decode idempotent and breaks that loop.
+    """
+    if "\\u" not in text and "\\x" not in text:
+        return text
     try:
         return text.encode("utf-8").decode("unicode_escape", errors="ignore")
     except Exception:

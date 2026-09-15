@@ -38,6 +38,17 @@ async def _noop_fetcher(server_url: str) -> list:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: wire Redis + gateway components. Shutdown: clean teardown."""
+    # Refuse to boot an insecure gateway in production.
+    from app.config import production_preflight
+    preflight_errors = production_preflight(settings)
+    if preflight_errors:
+        for err in preflight_errors:
+            log.error("production_preflight_failed", error=err)
+        raise RuntimeError(
+            "SentinelMCP refused to start: insecure production configuration — "
+            + "; ".join(preflight_errors)
+        )
+
     redis = get_redis()
 
     app.state.schema_layer = SchemaLayer(redis)
@@ -89,7 +100,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=settings.cors_origin_list,
         allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
