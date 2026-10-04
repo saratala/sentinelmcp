@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import time
 from typing import Any, Optional
 
@@ -199,42 +200,85 @@ async def probe_pii_leak(
     )
 
 
+# ── Precise attack-confirmation signatures ────────────────────────────────────
+# These match only when an attack actually SUCCEEDED — real DB error strings,
+# real /etc/passwd or hosts-file content, real cloud-metadata/SSH-banner output —
+# not generic words ("sql", "table", "localhost", "SSH") that appear in benign
+# responses. Combined with a benign-baseline differential, this kills the false
+# positives that loose substring matching produced on real servers.
+
+_SQL_ERROR_SIGNATURES = [
+    r"you have an error in your sql syntax", r"sql syntax.*?near", r"syntax error at or near",
+    r"unclosed quotation mark", r"quoted string not properly terminated",
+    r"unterminated quoted string", r"incorrect syntax near", r"\bORA-\d{5}\b",
+    r"PG::\w+Error", r"SQLite3?::\w+", r"no such table", r"unknown column",
+    r"mysql_fetch", r"pg_query\(\)", r"warning:\s*mysqli?", r"microsoft ole db provider",
+    r"odbc.*?driver.*?error", r"sqlstate\[",
+]
+_PATH_SIGNATURES = [
+    r"root:.*?:0:0:", r"daemon:.*?:/usr/sbin", r"\bnobody:x?:\d",
+    r"127\.0\.0\.1\s+localhost", r"\[fonts\]", r"\[extensions\]",
+    r"# Copyright \(c\) \d+ Microsoft",
+]
+_SSRF_SIGNATURES = [
+    r"\bami-id\b", r"\binstance-id\b", r"\binstance-type\b", r"computeMetadata",
+    r"iam/security-credentials", r"ami-launch-index", r"SSH-2\.0-", r"OpenSSH_\d",
+]
+
+
+def _match_signature(text: str, patterns: list[str]) -> Optional[str]:
+    """Return the first signature match in text (truncated), or None."""
+    for p in patterns:
+        m = re.search(p, text, re.IGNORECASE | re.DOTALL)
+        if m:
+            return m.group(0)[:80]
+    return None
+
+
+async def _differential_probe(
+    client: httpx.AsyncClient, url: str, timeout: float,
+    payloads: list[str], signatures: list[str],
+) -> Optional[dict]:
+    """Send a benign control then attack payloads; flag only when an attack
+    triggers a signature that the benign control did NOT (eliminates FPs where
+    the server emits the indicator regardless of input)."""
+    tools = await _tools_list(client, url, timeout)
+    for tool in tools[:3]:
+        props = (tool.get("inputSchema", {}) or {}).get("properties", {})
+        if not props:
+            continue
+        param = next(iter(props))
+        # Baseline with a harmless value — if the server already emits a signature
+        # here, it is not caused by our payload, so skip this tool.
+        base = await _tools_call(client, url, tool["name"],
+                                 {param: "sentinelmcp_probe_control"}, timeout)
+        if _match_signature(json.dumps(base), signatures):
+            continue
+        for payload in payloads:
+            resp = await _tools_call(client, url, tool["name"], {param: payload}, timeout)
+            hit = _match_signature(json.dumps(resp), signatures)
+            if hit:
+                return {"tool": tool.get("name", "?"), "payload": payload[:60], "match": hit}
+    return None
+
+
 async def probe_sql_injection(
     client: httpx.AsyncClient, url: str, timeout: float
 ) -> ProbeFinding:
     t0 = time.perf_counter()
-    tools = await _tools_list(client, url, timeout)
-    sql_payloads = [
-        "'; DROP TABLE users; --",
-        "1 OR 1=1",
-        "' UNION SELECT * FROM secrets --",
-    ]
-    indicators_vulnerable = ["syntax error", "sql", "database", "table", "column"]
-    found_indicators = []
-    for tool in tools[:3]:
-        for payload in sql_payloads:
-            # Try to find a string-type parameter
-            schema = tool.get("inputSchema", {})
-            props = schema.get("properties", {})
-            if not props:
-                continue
-            first_param = next(iter(props))
-            resp = await _tools_call(client, url, tool["name"], {first_param: payload}, timeout)
-            resp_text = json.dumps(resp).lower()
-            for ind in indicators_vulnerable:
-                if ind in resp_text:
-                    found_indicators.append(ind)
-    verdict = "VULNERABLE" if found_indicators else "PROTECTED"
+    payloads = ["'; DROP TABLE users; --", "1' OR '1'='1", "' UNION SELECT NULL,NULL,NULL --"]
+    hit = await _differential_probe(client, url, timeout, payloads, _SQL_ERROR_SIGNATURES)
+    verdict = "VULNERABLE" if hit else "PROTECTED"
     return ProbeFinding(
         attack_type="sql_injection",
         verdict=verdict,
         severity="HIGH" if verdict == "VULNERABLE" else "LOW",
         owasp_id="LLM07",
         details=(
-            f"SQL error indicators in responses: {found_indicators}"
-            if found_indicators else "No SQL error indicators found"
+            f"SQL error triggered by injection in tool '{hit['tool']}': {hit['match']}"
+            if hit else "No SQL error signatures triggered (benign-baseline confirmed)"
         ),
-        evidence=str(found_indicators)[:200],
+        evidence=str(hit or "")[:200],
         latency_ms=round((time.perf_counter() - t0) * 1000, 2),
     )
 
@@ -243,33 +287,19 @@ async def probe_path_traversal(
     client: httpx.AsyncClient, url: str, timeout: float
 ) -> ProbeFinding:
     t0 = time.perf_counter()
-    tools = await _tools_list(client, url, timeout)
     payloads = ["../../../etc/passwd", "..\\..\\..\\windows\\system32\\drivers\\etc\\hosts"]
-    indicators = ["root:", "daemon:", "nobody:", "localhost", "[drivers]"]
-    found = []
-    for tool in tools[:3]:
-        schema = tool.get("inputSchema", {})
-        props = schema.get("properties", {})
-        if not props:
-            continue
-        first_param = next(iter(props))
-        for payload in payloads:
-            resp = await _tools_call(client, url, tool["name"], {first_param: payload}, timeout)
-            resp_text = json.dumps(resp)
-            for ind in indicators:
-                if ind in resp_text:
-                    found.append(ind)
-    verdict = "VULNERABLE" if found else "PROTECTED"
+    hit = await _differential_probe(client, url, timeout, payloads, _PATH_SIGNATURES)
+    verdict = "VULNERABLE" if hit else "PROTECTED"
     return ProbeFinding(
         attack_type="path_traversal",
         verdict=verdict,
         severity="HIGH" if verdict == "VULNERABLE" else "LOW",
         owasp_id="LLM07",
         details=(
-            f"Path traversal indicators: {found}"
-            if found else "No path traversal exposure detected"
+            f"System file content leaked via traversal in '{hit['tool']}': {hit['match']}"
+            if hit else "No system-file content leaked (benign-baseline confirmed)"
         ),
-        evidence=str(found)[:200],
+        evidence=str(hit or "")[:200],
         latency_ms=round((time.perf_counter() - t0) * 1000, 2),
     )
 
@@ -278,27 +308,14 @@ async def probe_ssrf(
     client: httpx.AsyncClient, url: str, timeout: float
 ) -> ProbeFinding:
     t0 = time.perf_counter()
-    tools = await _tools_list(client, url, timeout)
-    ssrf_payloads = [
-        "http://169.254.169.254/latest/meta-data/",
-        "http://metadata.google.internal/",
+    payloads = [
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        "http://metadata.google.internal/computeMetadata/v1/",
         "http://localhost:22",
     ]
-    indicators = ["ami-id", "instance-id", "computeMetadata", "SSH", "OpenSSH"]
-    found = []
-    for tool in tools[:3]:
-        schema = tool.get("inputSchema", {})
-        props = schema.get("properties", {})
-        if not props:
-            continue
-        first_param = next(iter(props))
-        for payload in ssrf_payloads:
-            resp = await _tools_call(client, url, tool["name"], {first_param: payload}, timeout)
-            resp_text = json.dumps(resp)
-            for ind in indicators:
-                if ind in resp_text:
-                    found.append(ind)
-    verdict = "VULNERABLE" if found else "PROTECTED"
+    hit = await _differential_probe(client, url, timeout, payloads, _SSRF_SIGNATURES)
+    found = [hit["match"]] if hit else []
+    verdict = "VULNERABLE" if hit else "PROTECTED"
     return ProbeFinding(
         attack_type="ssrf",
         verdict=verdict,
